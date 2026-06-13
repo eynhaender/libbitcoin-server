@@ -117,6 +117,21 @@ void server_node::start_bitcoind(const code& ec,
     }
 
     attach_bitcoind_session()->start(
+        std::bind(&server_node::start_mcp, this, _1, handler));
+}
+
+void server_node::start_mcp(const code& ec,
+    const result_handler& handler) NOEXCEPT
+{
+    BC_ASSERT(stranded());
+
+    if (ec)
+    {
+        handler(ec);
+        return;
+    }
+
+    attach_mcp_session()->start(
         std::bind(&server_node::start_electrum, this, _1, handler));
 }
 
@@ -183,6 +198,12 @@ session_bitcoind::ptr server_node::attach_bitcoind_session() NOEXCEPT
 {
     return net::attach<session_bitcoind>(*this, config_,
         config_.server.bitcoind);
+}
+
+session_mcp::ptr server_node::attach_mcp_session() NOEXCEPT
+{
+    return net::attach<session_mcp>(*this, config_,
+        config_.server.mcp);
 }
 
 session_electrum::ptr server_node::attach_electrum_session() NOEXCEPT

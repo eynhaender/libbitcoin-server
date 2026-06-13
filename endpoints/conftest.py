@@ -107,6 +107,20 @@ def pytest_addoption(parser):
         help="Port for Stratum v2 (default: 3336)"
     )
 
+    # MCP options
+    parser.addoption(
+        "--mcp-host",
+        action="store",
+        default="localhost",
+        help="Host for MCP server (default: localhost)"
+    )
+    parser.addoption(
+        "--mcp-port",
+        action="store",
+        default="8334",
+        help="Port for MCP server (default: 8334)"
+    )
+
     # General options
     parser.addoption(
         "--timeout",
@@ -198,5 +212,18 @@ def stratum_v2_config(request):
     return {
         "host": request.config.getoption("--stratum-v2-host"),
         "port": int(request.config.getoption("--stratum-v2-port")),
+        "timeout": float(request.config.getoption("--timeout"))
+    }
+
+
+@pytest.fixture(scope="session")
+def mcp_config(request):
+    """Configuration for MCP server tests."""
+    host = request.config.getoption("--mcp-host")
+    port = int(request.config.getoption("--mcp-port"))
+    return {
+        "host": host,
+        "port": port,
+        "url": f"http://{host}:{port}/mcp",
         "timeout": float(request.config.getoption("--timeout"))
     }

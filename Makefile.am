@@ -68,6 +68,7 @@ src_libbitcoin_server_la_SOURCES = \
     src/protocols/native/protocol_native_input.cpp \
     src/protocols/native/protocol_native_output.cpp \
     src/protocols/native/protocol_native_tx.cpp \
+    src/protocols/mcp/protocol_mcp.cpp \
     src/protocols/stratum_v1/protocol_stratum_v1.cpp
 
 # local: test/libbitcoin-server-test
@@ -200,6 +201,7 @@ include_bitcoin_server_interfaces_HEADERS = \
     include/bitcoin/server/interfaces/btcd.hpp \
     include/bitcoin/server/interfaces/electrum.hpp \
     include/bitcoin/server/interfaces/interfaces.hpp \
+    include/bitcoin/server/interfaces/mcp.hpp \
     include/bitcoin/server/interfaces/native.hpp \
     include/bitcoin/server/interfaces/stratum_v1.hpp \
     include/bitcoin/server/interfaces/stratum_v2.hpp \
@@ -224,6 +226,7 @@ include_bitcoin_server_protocols_HEADERS = \
     include/bitcoin/server/protocols/protocol_electrum_version.hpp \
     include/bitcoin/server/protocols/protocol_html.hpp \
     include/bitcoin/server/protocols/protocol_http.hpp \
+    include/bitcoin/server/protocols/protocol_mcp.hpp \
     include/bitcoin/server/protocols/protocol_native.hpp \
     include/bitcoin/server/protocols/protocol_rpc.hpp \
     include/bitcoin/server/protocols/protocol_stratum_v1.hpp \

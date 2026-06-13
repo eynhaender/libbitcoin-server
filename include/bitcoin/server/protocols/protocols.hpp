@@ -23,6 +23,7 @@
 #include <bitcoin/server/protocols/protocol_bitcoind_rest.hpp>
 #include <bitcoin/server/protocols/protocol_bitcoind_rpc.hpp>
 #include <bitcoin/server/protocols/protocol_electrum.hpp>
+#include <bitcoin/server/protocols/protocol_mcp.hpp>
 #include <bitcoin/server/protocols/protocol_electrum_version.hpp>
 #include <bitcoin/server/protocols/protocol_native.hpp>
 #include <bitcoin/server/protocols/protocol_html.hpp>
@@ -92,7 +93,8 @@ server::protocol → node::protocol
     ├── protocol_html
     │   ├── protocol_admin
     │   └── protocol_native
-    └── protocol_bitcoind_rpc
-        └── protocol_bitcoind_rest
+    ├── protocol_bitcoind_rpc
+    │   └── protocol_bitcoind_rest
+    └── protocol_mcp
 
 */

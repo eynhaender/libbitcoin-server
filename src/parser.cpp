@@ -1122,6 +1122,83 @@ options_metadata parser::load_settings() THROWS
         "Allow requests from opaque origin (see CORS), multiple allowed, defaults to false."
     )
 
+    /* [mcp] */
+    (
+        "mcp.bind",
+        value<network::config::authorities>(&configured.server.mcp.binds),
+        "IP address to bind, multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.safe",
+        value<network::config::authorities>(&configured.server.mcp.safes),
+        "IP address to secure bind, multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.cert_auth",
+        value<std::filesystem::path>(&configured.server.mcp.cert_auth),
+        "The certificate authority directory (*.PEM), enables client authentication."
+    )
+    (
+        "mcp.cert_path",
+        value<std::filesystem::path>(&configured.server.mcp.cert_path),
+        "The path to the server certificate file (.PEM), defaults to unused."
+    )
+    (
+        "mcp.key_path",
+        value<std::filesystem::path>(&configured.server.mcp.key_path),
+        "The path to the server private key file (.PEM), defaults to unused."
+    )
+    (
+        "mcp.key_pass",
+        value<std::string>(&configured.server.mcp.key_pass),
+        "The password to decrypt the server private key file (.PEM), optional."
+    )
+    (
+        "mcp.connections",
+        value<uint16_t>(&configured.server.mcp.connections),
+        "The required maximum number of connections, defaults to '0'."
+    )
+    (
+        "mcp.inactivity_minutes",
+        value<uint32_t>(&configured.server.mcp.inactivity_minutes),
+        "The idle timeout (http keep-alive), defaults to '10'."
+    )
+    (
+        "mcp.expiration_minutes",
+        value<uint32_t>(&configured.server.mcp.expiration_minutes),
+        "The idle timeout (http keep-alive), defaults to '60'."
+    )
+    (
+        "mcp.minimum_buffer",
+        value<uint32_t>(&configured.server.mcp.minimum_buffer),
+        "The minimum retained read buffer size, defaults to '4000000'."
+    )
+    (
+        "mcp.maximum_request",
+        value<uint32_t>(&configured.server.mcp.maximum_request),
+        "The maximum allowed request size, defaults to '4000000'."
+    )
+    (
+        "mcp.server",
+        value<std::string>(&configured.server.mcp.server),
+        "The server name (http header), defaults to '" BC_HTTP_SERVER_NAME "'."
+    )
+    (
+        "mcp.host",
+        value<network::config::endpoints>(&configured.server.mcp.hosts),
+        "The host name (http verification), multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.origin",
+        value<network::config::endpoints>(&configured.server.mcp.origins),
+        "The allowed origin (see CORS), multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.allow_opaque_origin",
+        value<bool>(&configured.server.mcp.allow_opaque_origin),
+        "Allow requests from opaque origin (see CORS), multiple allowed, defaults to false."
+    )
+
     /* [electrum] */
     (
         "electrum.bind",

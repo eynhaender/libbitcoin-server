@@ -167,6 +167,9 @@ public:
     /// bitcoind compat interface (http/s, stateless json-rpc-v2)
     network::settings::http_server bitcoind{ "bitcoind" };
 
+    /// mcp interface (http/s, stateless json-rpc-v2)
+    network::settings::http_server mcp{ "mcp" };
+
     /// electrum compat interface (tcp/s, json-rpc-v2)
     electrum_server electrum{ "electrum" };
 
