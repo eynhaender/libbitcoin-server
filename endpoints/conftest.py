@@ -120,6 +120,12 @@ def pytest_addoption(parser):
         default="8334",
         help="Port for MCP server (default: 8334)"
     )
+    parser.addoption(
+        "--sse-wait",
+        action="store",
+        default="0",
+        help="Seconds to wait for live SSE push events (0=skip, default: 0)"
+    )
 
     # General options
     parser.addoption(
@@ -227,3 +233,9 @@ def mcp_config(request):
         "url": f"http://{host}:{port}/mcp",
         "timeout": float(request.config.getoption("--timeout"))
     }
+
+
+@pytest.fixture(scope="session")
+def sse_wait(request) -> float:
+    """Seconds to wait for live SSE push notifications (0 = skip)."""
+    return float(request.config.getoption("--sse-wait"))

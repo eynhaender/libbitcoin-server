@@ -213,7 +213,9 @@ class TestToolsDiscovery:
 
     EXPECTED_TOOLS = {
         "get_blockchain_info",
-        "get_block",
+        "get_block_header",
+        "get_block_details",
+        "get_block_txs",
         "get_transaction",
         "get_address_balance",
         "get_address_history",
@@ -303,46 +305,54 @@ class TestToolGetBlockchainInfo:
 # TOOL INVOCATION — get_block
 # ═══════════════════════════════════════════════════════════════════════════
 
-class TestToolGetBlock:
+class TestToolGetBlockHeader:
 
     def test_genesis_block(self, mcp_config):
-        """get_block at height 0 returns the genesis block."""
-        response = call_tool(mcp_config, "get_block", {"height": 0})
+        """get_block_header at height 0 returns the genesis block header."""
+        response = call_tool(mcp_config, "get_block_header", {"height": 0})
 
         text = assert_tool_result(response["result"])
         data = json.loads(text)
 
-        # libbitcoin serializes blocks as objects; at minimum there are header fields
         assert isinstance(data, dict), f"Expected dict, got {type(data)}"
-
-    def test_known_block(self, mcp_config):
-        """get_block at known height returns a valid block object."""
-        response = call_tool(
-            mcp_config, "get_block", {"height": ReferenceData.KNOWN_HEIGHT}
+        assert "hash" in data, f"Missing 'hash': {data}"
+        assert data["hash"] == ReferenceData.GENESIS_HASH, (
+            f"Wrong genesis hash: {data['hash']}"
         )
 
+    def test_known_block_by_height(self, mcp_config):
+        """get_block_header by height returns header with expected hash."""
+        response = call_tool(
+            mcp_config, "get_block_header", {"height": ReferenceData.KNOWN_HEIGHT}
+        )
         text = assert_tool_result(response["result"])
         data = json.loads(text)
         assert isinstance(data, dict)
+        assert data.get("hash") == ReferenceData.KNOWN_BLOCK_HASH
+
+    def test_known_block_by_hash(self, mcp_config):
+        """get_block_header by hash returns the same header as by height."""
+        r1 = call_tool(mcp_config, "get_block_header",
+                       {"height": ReferenceData.KNOWN_HEIGHT})
+        r2 = call_tool(mcp_config, "get_block_header",
+                       {"hash": ReferenceData.KNOWN_BLOCK_HASH})
+        assert assert_tool_result(r1["result"]) == assert_tool_result(r2["result"])
 
     def test_block_beyond_tip_returns_error(self, mcp_config):
-        """get_block at height beyond tip returns a not_found error."""
-        params = {"name": "get_block", "arguments": {"height": 99_999_999}}
+        """get_block_header at height beyond tip returns a not_found error."""
+        params = {"name": "get_block_header", "arguments": {"height": 99_999_999}}
         response = send_mcp(mcp_config, "tools/call", params)
         assert response is not None
-        # Server must return an error, not a result
         assert response.get("error") is not None, (
-            "Expected error for out-of-range height, got result"
+            "Expected error for out-of-range height"
         )
 
-    def test_missing_height_returns_error(self, mcp_config):
-        """get_block without 'height' argument returns invalid_argument error."""
-        params = {"name": "get_block", "arguments": {}}
+    def test_missing_args_returns_error(self, mcp_config):
+        """get_block_header without height or hash returns invalid_argument error."""
+        params = {"name": "get_block_header", "arguments": {}}
         response = send_mcp(mcp_config, "tools/call", params)
         assert response is not None
-        assert response.get("error") is not None, (
-            "Expected error when 'height' is missing"
-        )
+        assert response.get("error") is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

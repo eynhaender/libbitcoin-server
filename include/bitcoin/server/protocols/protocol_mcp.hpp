@@ -19,6 +19,7 @@
 #ifndef LIBBITCOIN_SERVER_PROTOCOLS_PROTOCOL_MCP_HPP
 #define LIBBITCOIN_SERVER_PROTOCOLS_PROTOCOL_MCP_HPP
 
+#include <atomic>
 #include <memory>
 #include <bitcoin/server/channels/channels.hpp>
 #include <bitcoin/server/define.hpp>
@@ -52,14 +53,19 @@ public:
     void stopping(const code& ec) NOEXCEPT override;
 
 protected:
-    using post = network::http::method::post;
-    using options = network::http::method::options;
-
-    /// Dispatch.
+    /// Dispatch (HTTP).
     void handle_receive_options(const code& ec,
         const network::http::method::options::cptr& options) NOEXCEPT override;
     void handle_receive_post(const code& ec,
-        const post::cptr& post) NOEXCEPT override;
+        const network::http::method::post::cptr& post) NOEXCEPT override;
+
+    /// Dispatch (WebSocket).
+    void dispatch_websocket(
+        const network::http::request& request) NOEXCEPT override;
+
+    /// Event handler for chain events — drives WS push subscriptions.
+    bool handle_chase(const code& ec, node::chase event_,
+        node::event_value value) NOEXCEPT;
 
     /// Handlers — session lifecycle.
     bool handle_initialize(const code& ec,
@@ -77,7 +83,8 @@ protected:
     bool handle_tools_call(const code& ec,
         rpc_interface::tools_call,
         const std::string& name,
-        const network::rpc::object_t& arguments) NOEXCEPT;
+        const network::rpc::object_t& arguments,
+        const network::rpc::object_t& meta) NOEXCEPT;
 
     /// Senders.
     void send_error(const code& ec) NOEXCEPT;
@@ -89,21 +96,78 @@ protected:
 
     /// Tool call dispatch (called from handle_tools_call).
     bool tool_get_blockchain_info() NOEXCEPT;
-    bool tool_get_block(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_configuration() NOEXCEPT;
+
+    bool tool_get_block_header(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_header_context(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_details(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_txs(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_tx(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_filter(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_filter_hash(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_block_filter_header(const network::rpc::object_t& arguments) NOEXCEPT;
+
     bool tool_get_transaction(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_tx_header(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_tx_details(const network::rpc::object_t& arguments) NOEXCEPT;
+
+    bool tool_get_input(const network::rpc::object_t& arguments) NOEXCEPT;
+
+    bool tool_get_output(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_output_spender(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_output_spenders(const network::rpc::object_t& arguments) NOEXCEPT;
+
     bool tool_get_address_balance(const network::rpc::object_t& arguments) NOEXCEPT;
     bool tool_get_address_history(const network::rpc::object_t& arguments) NOEXCEPT;
+    bool tool_get_address_confirmed(const network::rpc::object_t& arguments) NOEXCEPT;
+
+    /// Subscription tools (WebSocket only — error::not_implemented over HTTP).
+    bool tool_get_top_subscribe() NOEXCEPT;
+    bool tool_get_block_subscribe() NOEXCEPT;
+    bool tool_get_tx_subscribe() NOEXCEPT;
+
+    /// Push notifiers (called via POST from handle_chase).
+    void do_top(node::header_t link) NOEXCEPT;
+    void do_block(node::header_t link) NOEXCEPT;
+    void do_transaction(node::transaction_t link) NOEXCEPT;
+
+    /// SSE completion handlers for HTTP subscription streaming.
+    void handle_sse_start(const code& ec, size_t bytes) NOEXCEPT;
+    void handle_sse_write(const code& ec, size_t bytes) NOEXCEPT;
+
+    /// SSE keepalive — sends a comment every 5 minutes to prevent idle timeout.
+    void start_keepalive() NOEXCEPT;
+    void handle_keepalive(const code& ec) NOEXCEPT;
+    void handle_sse_keepalive(const code& ec, size_t bytes) NOEXCEPT;
 
 private:
+    /// Async address query helpers (run off-strand via PARALLEL, complete on-strand via POST).
+    bool dispatch_address_outpoints(const network::rpc::object_t& arguments,
+        bool confirmed_only) NOEXCEPT;
+    void do_address_outpoints(bool confirmed_only,
+        const system::hash_cptr& hash) NOEXCEPT;
+    void complete_address_outpoints(const code& ec,
+        database::outpoints set) NOEXCEPT;
+    void do_address_balance(const system::hash_cptr& hash) NOEXCEPT;
+    void complete_address_balance(const code& ec, uint64_t balance) NOEXCEPT;
     template <class Derived, typename Method, typename... Args>
     inline void subscribe(Method&& method, Args&&... args) NOEXCEPT
     {
         rpc_dispatcher_.subscribe(BIND_SHARED(method, args));
     }
 
+    // WebSocket push — mirrors protocol_html::notify_json without changing options_t.
+    void notify_json(boost::json::value&& model, size_t size_hint) NOEXCEPT;
+
     // Senders.
     void send_rpc(network::rpc::response_t&& model,
         size_t size_hint) NOEXCEPT;
+
+    // True when send_rpc was called during the current dispatch_websocket call.
+    // Cleared at the start of each WS frame dispatch; set in send_rpc WS branch.
+    // Lets dispatch_websocket call resume() to restart the read loop for WS
+    // notifications where no response is sent (e.g. notifications/initialized).
+    bool ws_response_sent_{};
 
     // Cache request for serialization (requires strand).
     void set_rpc_request(network::rpc::version version,
@@ -117,6 +181,20 @@ private:
     rpc_dispatcher rpc_dispatcher_{};
     network::rpc::version version_{};
     network::rpc::id_option id_{};
+
+    // Thread safe — signals long-running address queries to abort.
+    std::atomic_bool stopping_{};
+
+    // Thread safe — active push subscriptions (WS or SSE, unknown = inactive).
+    std::atomic_bool top_subscribe_{};
+    std::atomic_bool block_subscribe_{};
+    std::atomic_bool tx_subscribe_{};
+
+    // SSE stream for HTTP subscription tools (protected by strand).
+    network::socket::sse_state::ptr sse_{};
+    std::string sse_initial_event_{};
+    bool sse_writing_{};
+    network::deadline::ptr keepalive_{};
 };
 
 } // namespace server

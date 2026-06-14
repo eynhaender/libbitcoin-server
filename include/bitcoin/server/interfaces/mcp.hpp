@@ -36,7 +36,7 @@ struct mcp_methods
 
         /// Tool discovery and invocation.
         method<"tools/list", optional<""_t>>{ "cursor" },
-        method<"tools/call", string_t, optional<empty::object>>{ "name", "arguments" }
+        method<"tools/call", string_t, optional<empty::object>, optional<empty::object>>{ "name", "arguments", "_meta" }
     };
 
     template <typename... Args>
