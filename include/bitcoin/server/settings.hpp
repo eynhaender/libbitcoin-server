@@ -225,6 +225,20 @@ public:
         uint32_t maximum_history{ 1'000'000 };
     };
 
+    /// mcp interface settings (address subscription only).
+    struct mcp_server
+      : public network::settings::websocket_server
+    {
+        using base = network::settings::websocket_server;
+        using base::base;
+
+        /// Maximum number of address history entries upon one subscription.
+        uint32_t maximum_history{ 1'000'000 };
+
+        /// Maximum cumulative number of address subscriptions per channel.
+        uint32_t maximum_subscriptions{ 1'000'000 };
+    };
+
     struct bitcoind_zmq_server
       : public network::settings::zmtp_server
     {
@@ -267,6 +281,9 @@ public:
 
     /// esplora compat interface (http/s + websocket, RESTful json)
     esplora_server esplora{ "esplora" };
+
+    /// mcp interface (http/s + websocket, json-rpc-v2, address subscription)
+    mcp_server mcp{ "mcp" };
 
     /// stratum v1 compat interface (tcp/s, json-rpc-v1, auth handshake)
     network::settings::tls_server stratum_v1{ "stratum_v1" };

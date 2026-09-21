@@ -1712,6 +1712,107 @@ options_metadata parser::load_settings() THROWS
         setting<bool>(&configured.server.esplora.allow_opaque_origin),
         "Allow requests from opaque origin (see CORS), multiple allowed, defaults to false."
     )
+    /* [mcp] */
+    (
+        "mcp.bind",
+        setting<network::config::authorities>(&configured.server.mcp.binds),
+        "IP address to bind, multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.safe",
+        setting<network::config::authorities>(&configured.server.mcp.safes),
+        "IP address to secure bind, multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.cert_auth",
+        setting<config::path>(&configured.server.mcp.cert_auth),
+        "The certificate authority directory (*.PEM), enables client authentication."
+    )
+    (
+        "mcp.cert_path",
+        setting<config::path>(&configured.server.mcp.cert_path),
+        "The path to the server certificate file (.PEM), defaults to unused."
+    )
+    (
+        "mcp.key_path",
+        setting<config::path>(&configured.server.mcp.key_path),
+        "The path to the server private key file (.PEM), defaults to unused."
+    )
+    (
+        "mcp.key_pass",
+        secret<std::string>(&configured.server.mcp.key_pass),
+        "The password to decrypt the server private key file (.PEM), optional."
+    )
+    (
+        "mcp.credential",
+        secret<network::config::credentials>(&configured.server.mcp.credentials),
+        "The 'username:password[:method,...]' authorization (not secure), multiple allowed."
+    )
+    (
+        "mcp.connections",
+        setting<uint16_t>(&configured.server.mcp.connections),
+        "The required maximum number of connections, defaults to '0'."
+    )
+    (
+        "mcp.inactivity_minutes",
+        setting<uint32_t>(&configured.server.mcp.inactivity_minutes),
+        "The idle timeout (http/ws keep-alive), defaults to '10'."
+    )
+    (
+        "mcp.expiration_minutes",
+        setting<uint32_t>(&configured.server.mcp.expiration_minutes),
+        "The idle timeout (http/ws keep-alive), defaults to '60'."
+    )
+    (
+        "mcp.minimum_buffer",
+        setting<uint32_t>(&configured.server.mcp.minimum_buffer),
+        "The minimum retained read buffer size, defaults to '4000000'."
+    )
+    (
+        "mcp.maximum_buffer",
+        setting<uint32_t>(&configured.server.mcp.maximum_buffer),
+        "The maximum json response buffer size, defaults to '65536'."
+    )
+    (
+        "mcp.maximum_request",
+        setting<uint32_t>(&configured.server.mcp.maximum_request),
+        "The maximum allowed request size, defaults to '4000000'."
+    )
+    (
+        "mcp.rate_limit",
+        setting<uint32_t>(&configured.server.mcp.rate_limit),
+        "The send rate limit in bytes per second, defaults to '0' (unlimited)."
+    )
+    (
+        "mcp.server",
+        setting<std::string>(&configured.server.mcp.server),
+        "The server name (http header), defaults to '" BC_HTTP_SERVER_NAME "'."
+    )
+    (
+        "mcp.maximum_history",
+        setting<uint32_t>(&configured.server.mcp.maximum_history),
+        "The maximum number of address history entries upon one subscription, defaults to '1000000'."
+    )
+    (
+        "mcp.maximum_subscriptions",
+        setting<uint32_t>(&configured.server.mcp.maximum_subscriptions),
+        "The maximum allowed address subscriptions per channel, defaults to '1000000'."
+    )
+    (
+        "mcp.host",
+        setting<network::config::endpoints>(&configured.server.mcp.hosts),
+        "The host name (http verification), multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.origin",
+        setting<network::config::endpoints>(&configured.server.mcp.origins),
+        "The allowed origin (see CORS), multiple allowed, defaults to empty (disabled)."
+    )
+    (
+        "mcp.allow_opaque_origin",
+        setting<bool>(&configured.server.mcp.allow_opaque_origin),
+        "Allow requests from opaque origin (see CORS), multiple allowed, defaults to false."
+    )
     /* [stratum_v1] */
     (
         "stratum_v1.bind",

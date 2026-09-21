@@ -101,6 +101,7 @@ code settings::initialize() NOEXCEPT
     if (const auto ec = electrum.initialize_context()) return ec;
     if (const auto ec = sparrow.initialize_context()) return ec;
     if (const auto ec = esplora.initialize_context()) return ec;
+    if (const auto ec = mcp.initialize_context()) return ec;
     if (const auto ec = stratum_v1.initialize_context()) return ec;
     if (const auto ec = stratum_v2.initialize_context()) return ec;
     return bitcoind_zmq.initialize_context();

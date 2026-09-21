@@ -248,6 +248,43 @@ BOOST_AUTO_TEST_CASE(server__electrum_server__defaults__expected)
     BOOST_REQUIRE(server.more_safes.empty());
 }
 
+BOOST_AUTO_TEST_CASE(server__mcp_server__defaults__expected)
+{
+    const server::settings::embedded_pages admin{};
+    const server::settings::embedded_pages native{};
+    const server::settings instance{ selection::none, native, admin };
+    const auto& server = instance.mcp;
+
+    // tcp_server
+    BOOST_REQUIRE_EQUAL(server.name, "mcp");
+    BOOST_REQUIRE(server.binds.empty());
+    BOOST_REQUIRE_EQUAL(server.connections, 0u);
+    BOOST_REQUIRE_EQUAL(server.inactivity_minutes, 10u);
+    BOOST_REQUIRE_EQUAL(server.expiration_minutes, 60u);
+    BOOST_REQUIRE(!server.enabled());
+    BOOST_REQUIRE(server.inactivity() == minutes(10));
+    BOOST_REQUIRE(server.expiration() == minutes(60));
+
+    // tls_server
+    BOOST_REQUIRE(!server.secure());
+    BOOST_REQUIRE(server.safes.empty());
+    BOOST_REQUIRE(server.cert_auth.empty());
+    BOOST_REQUIRE(server.cert_path.empty());
+    BOOST_REQUIRE(server.key_path.empty());
+    BOOST_REQUIRE(server.key_pass.empty());
+
+    // http_server
+    BOOST_REQUIRE_EQUAL(server.server, BC_HTTP_SERVER_NAME);
+    BOOST_REQUIRE(server.hosts.empty());
+    BOOST_REQUIRE(server.origins.empty());
+    BOOST_REQUIRE(!server.allow_opaque_origin);
+    BOOST_REQUIRE(server.credentials.empty());
+
+    // mcp_server
+    BOOST_REQUIRE_EQUAL(server.maximum_history, 1'000'000u);
+    BOOST_REQUIRE_EQUAL(server.maximum_subscriptions, 1'000'000u);
+}
+
 BOOST_AUTO_TEST_CASE(server__stratum_v1_server__defaults__expected)
 {
     const server::settings::embedded_pages admin{};
