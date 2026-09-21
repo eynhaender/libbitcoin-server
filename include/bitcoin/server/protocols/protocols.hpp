@@ -37,6 +37,7 @@
 #include <bitcoin/server/protocols/protocol_electrum.hpp>
 #include <bitcoin/server/protocols/protocol_electrum_version.hpp>
 #include <bitcoin/server/protocols/protocol_esplora.hpp>
+#include <bitcoin/server/protocols/protocol_mcp.hpp>
 #include <bitcoin/server/protocols/protocol_native.hpp>
 #include <bitcoin/server/protocols/protocol_html.hpp>
 #include <bitcoin/server/protocols/protocol_http.hpp>
@@ -106,9 +107,11 @@ server::protocol → node::protocol
     ├── protocol_rpc<Interface> (universal json-rpc, dispatch by interface)
     │   ╞══ protocol_rpc<electrum_handshake>
     │   │   └── protocol_electrum_version (handshake, attached first)
-    │   ╘══ protocol_rpc<electrum>
-    │       └── protocol_electrum (terminal responder, attached last)
-    │           └── protocol_sparrow (+ dispatcher<sparrow>)
+    │   ╞══ protocol_rpc<electrum>
+    │   │   └── protocol_electrum (terminal responder, attached last)
+    │   │       └── protocol_sparrow (+ dispatcher<sparrow>)
+    │   ╘══ protocol_rpc<mcp>
+    │       └── protocol_mcp (terminal responder, the only protocol)
     └── protocol_bitcoind (common base and terminal default responder)
         ├── protocol_bitcoind_dispatch<Interface>
         │   ╞══ protocol_bitcoind_dispatch<bitcoind_blockchain>

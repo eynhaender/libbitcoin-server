@@ -28,6 +28,7 @@
 #include <bitcoin/server/channels/channel_electrum.hpp>
 #include <bitcoin/server/channels/channel_html.hpp>
 #include <bitcoin/server/channels/channel_http.hpp>
+#include <bitcoin/server/channels/channel_mcp.hpp>
 #include <bitcoin/server/channels/channel_rpc.hpp>
 #include <bitcoin/server/channels/channel_stratum_v1.hpp>
 #include <bitcoin/server/channels/channel_stratum_v2.hpp>
@@ -35,6 +36,7 @@
 #include <bitcoin/server/error/bitcoind_error_t.hpp>
 #include <bitcoin/server/error/btcd_error_t.hpp>
 #include <bitcoin/server/error/electrum_error_t.hpp>
+#include <bitcoin/server/error/mcp_error_t.hpp>
 #include <bitcoin/server/error/error.hpp>
 #include <bitcoin/server/error/error_t.hpp>
 #include <bitcoin/server/interfaces/admin.hpp>
@@ -52,6 +54,7 @@
 #include <bitcoin/server/interfaces/btcd.hpp>
 #include <bitcoin/server/interfaces/electrum.hpp>
 #include <bitcoin/server/interfaces/esplora.hpp>
+#include <bitcoin/server/interfaces/mcp.hpp>
 #include <bitcoin/server/interfaces/interfaces.hpp>
 #include <bitcoin/server/interfaces/native.hpp>
 #include <bitcoin/server/interfaces/sparrow.hpp>
@@ -90,6 +93,7 @@
 #include <bitcoin/server/protocols/protocol_electrum_version.hpp>
 #include <bitcoin/server/protocols/protocol_esplora.hpp>
 #include <bitcoin/server/protocols/protocol_html.hpp>
+#include <bitcoin/server/protocols/protocol_mcp.hpp>
 #include <bitcoin/server/protocols/protocol_http.hpp>
 #include <bitcoin/server/protocols/protocol_native.hpp>
 #include <bitcoin/server/protocols/protocol_rpc.hpp>

@@ -176,6 +176,21 @@ void server_node::start_esplora(const code& ec,
     }
 
     attach_esplora_session()->start(
+        std::bind(&server_node::start_mcp, this, _1, handler));
+}
+
+void server_node::start_mcp(const code& ec,
+    const result_handler& handler) NOEXCEPT
+{
+    BC_ASSERT(stranded());
+
+    if (ec)
+    {
+        handler(ec);
+        return;
+    }
+
+    attach_mcp_session()->start(
         std::bind(&server_node::start_stratum_v1, this, _1, handler));
 }
 
@@ -266,6 +281,12 @@ session_esplora::ptr server_node::attach_esplora_session() NOEXCEPT
 {
     return net::attach<session_esplora>(*this, config_,
         config_.server.esplora);
+}
+
+session_mcp::ptr server_node::attach_mcp_session() NOEXCEPT
+{
+    return net::attach<session_mcp>(*this, config_,
+        config_.server.mcp);
 }
 
 session_stratum_v1::ptr server_node::attach_stratum_v1_session() NOEXCEPT
