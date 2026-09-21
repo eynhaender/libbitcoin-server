@@ -54,6 +54,7 @@ src_libbitcoin_server_la_SOURCES = \
     ${srcdir}/../../src/error/bitcoind_error_t.cpp \
     ${srcdir}/../../src/error/btcd_error_t.cpp \
     ${srcdir}/../../src/error/electrum_error_t.cpp \
+    ${srcdir}/../../src/error/mcp_error_t.cpp \
     ${srcdir}/../../src/error/error_t.cpp \
     ${srcdir}/../../src/parsers/admin_query.cpp \
     ${srcdir}/../../src/parsers/admin_target.cpp \
@@ -103,6 +104,7 @@ src_libbitcoin_server_la_SOURCES = \
     ${srcdir}/../../src/protocols/esplora/protocol_esplora_block.cpp \
     ${srcdir}/../../src/protocols/esplora/protocol_esplora_mempool.cpp \
     ${srcdir}/../../src/protocols/esplora/protocol_esplora_transaction.cpp \
+    ${srcdir}/../../src/protocols/mcp/protocol_mcp.cpp \
     ${srcdir}/../../src/protocols/native/protocol_native.cpp \
     ${srcdir}/../../src/protocols/native/protocol_native_address.cpp \
     ${srcdir}/../../src/protocols/native/protocol_native_block.cpp \
@@ -155,6 +157,7 @@ include_bitcoin_server_channels_HEADERS = \
     ${srcdir}/../../include/bitcoin/server/channels/channel_electrum.hpp \
     ${srcdir}/../../include/bitcoin/server/channels/channel_html.hpp \
     ${srcdir}/../../include/bitcoin/server/channels/channel_http.hpp \
+    ${srcdir}/../../include/bitcoin/server/channels/channel_mcp.hpp \
     ${srcdir}/../../include/bitcoin/server/channels/channel_rpc.hpp \
     ${srcdir}/../../include/bitcoin/server/channels/channel_stratum_v1.hpp \
     ${srcdir}/../../include/bitcoin/server/channels/channel_stratum_v2.hpp \
@@ -167,6 +170,7 @@ include_bitcoin_server_error_HEADERS = \
     ${srcdir}/../../include/bitcoin/server/error/bitcoind_error_t.hpp \
     ${srcdir}/../../include/bitcoin/server/error/btcd_error_t.hpp \
     ${srcdir}/../../include/bitcoin/server/error/electrum_error_t.hpp \
+    ${srcdir}/../../include/bitcoin/server/error/mcp_error_t.hpp \
     ${srcdir}/../../include/bitcoin/server/error/error.hpp \
     ${srcdir}/../../include/bitcoin/server/error/error_t.hpp
 
@@ -195,6 +199,7 @@ include_bitcoin_server_interfaces_HEADERS = \
     ${srcdir}/../../include/bitcoin/server/interfaces/btcd.hpp \
     ${srcdir}/../../include/bitcoin/server/interfaces/electrum.hpp \
     ${srcdir}/../../include/bitcoin/server/interfaces/esplora.hpp \
+    ${srcdir}/../../include/bitcoin/server/interfaces/mcp.hpp \
     ${srcdir}/../../include/bitcoin/server/interfaces/interfaces.hpp \
     ${srcdir}/../../include/bitcoin/server/interfaces/native.hpp \
     ${srcdir}/../../include/bitcoin/server/interfaces/sparrow.hpp \
@@ -243,6 +248,7 @@ include_bitcoin_server_protocols_HEADERS = \
     ${srcdir}/../../include/bitcoin/server/protocols/protocol_electrum_version.hpp \
     ${srcdir}/../../include/bitcoin/server/protocols/protocol_esplora.hpp \
     ${srcdir}/../../include/bitcoin/server/protocols/protocol_html.hpp \
+    ${srcdir}/../../include/bitcoin/server/protocols/protocol_mcp.hpp \
     ${srcdir}/../../include/bitcoin/server/protocols/protocol_http.hpp \
     ${srcdir}/../../include/bitcoin/server/protocols/protocol_native.hpp \
     ${srcdir}/../../include/bitcoin/server/protocols/protocol_rpc.hpp \
@@ -353,6 +359,8 @@ test_libbitcoin_server_test_SOURCES = \
     ${srcdir}/../../test/protocols/esplora/esplora_setup_fixture.cpp \
     ${srcdir}/../../test/protocols/esplora/esplora_transaction.cpp \
     ${srcdir}/../../test/protocols/esplora/esplora_websocket.cpp \
+    ${srcdir}/../../test/protocols/mcp/mcp.cpp \
+    ${srcdir}/../../test/protocols/mcp/mcp_setup_fixture.cpp \
     ${srcdir}/../../test/protocols/fixture/rpc_client.cpp \
     ${srcdir}/../../test/protocols/fixture/rpc_setup_fixture.cpp \
     ${srcdir}/../../test/protocols/native/native_address.cpp \
