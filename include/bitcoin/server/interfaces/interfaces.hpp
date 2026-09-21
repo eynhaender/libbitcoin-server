@@ -34,6 +34,7 @@
 #include <bitcoin/server/interfaces/btcd.hpp>
 #include <bitcoin/server/interfaces/electrum.hpp>
 #include <bitcoin/server/interfaces/esplora.hpp>
+#include <bitcoin/server/interfaces/mcp.hpp>
 #include <bitcoin/server/interfaces/native.hpp>
 #include <bitcoin/server/interfaces/sparrow.hpp>
 #include <bitcoin/server/interfaces/stratum_v1.hpp>
@@ -60,6 +61,7 @@ using btcd                   = publish<btcd_methods>;
 using electrum               = publish<electrum_methods>;
 using electrum_handshake     = publish<electrum_handshake_methods>;
 using esplora                = publish<esplora_methods>;
+using mcp                    = publish<mcp_methods>;
 using native                 = publish<native_methods>;
 using sparrow                = publish<sparrow_methods>;
 using stratum_v1             = publish<stratum_v1_methods>;

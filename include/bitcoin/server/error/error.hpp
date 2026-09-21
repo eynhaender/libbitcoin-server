@@ -22,6 +22,7 @@
 #include <bitcoin/server/error/bitcoind_error_t.hpp>
 #include <bitcoin/server/error/btcd_error_t.hpp>
 #include <bitcoin/server/error/electrum_error_t.hpp>
+#include <bitcoin/server/error/mcp_error_t.hpp>
 #include <bitcoin/server/error/error_t.hpp>
 
 #endif
