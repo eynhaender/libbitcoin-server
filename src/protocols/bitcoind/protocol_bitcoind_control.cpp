@@ -78,7 +78,7 @@ static void append_usage(std::string& out, const Method& entry,
     const auto& names = entry.parameter_names();
     [&]<size_t... Index>(std::index_sequence<Index...>) NOEXCEPT
     {
-        ((out += is_defaulted<std::tuple_element_t<Index,
+        ((out += !is_required<std::tuple_element_t<Index,
             typename Method::args_native>> ?
                 " ( " + std::string{ names.at(Index) } + " )" :
                 " " + std::string{ names.at(Index) }), ...);

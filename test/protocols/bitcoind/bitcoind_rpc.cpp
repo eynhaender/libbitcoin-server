@@ -2754,6 +2754,12 @@ BC_AUTO_TEST_CASE(bitcoind_rpc__help__getblock__usage_line)
     BC_REQUIRE_EQUAL(as_text(response.at("result")), "getblock blockhash ( verbosity )");
 }
 
+BC_AUTO_TEST_CASE(bitcoind_rpc__help__nullable_parameter__optional_usage)
+{
+    const auto response = rpc("help", "[\"decoderawtransaction\"]");
+    BC_REQUIRE_EQUAL(as_text(response.at("result")), "decoderawtransaction hexstring ( iswitness )");
+}
+
 BC_AUTO_TEST_CASE(bitcoind_rpc__help__unknown__reported)
 {
     const auto response = rpc("help", "[\"nonsense\"]");
