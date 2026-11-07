@@ -32,7 +32,7 @@ struct bitcoind_transaction_methods
     {
         method<"createrawtransaction", array_t, value_t, nullopt<0.0>, nullopt<true>, nullopt<2.0>>{ "inputs", "outputs", "locktime", "replaceable", "version" },
         method<"decoderawtransaction", string_t, nullable<boolean_t>>{ "hexstring", "iswitness" },
-        method<"getrawtransaction", string_t, nullopt<0.0>, nullopt<""_t>>{ "txid", "verbosity", "blockhash" },
+        method<"getrawtransaction", string_t, nullable<value_t>, nullopt<""_t>>{ "txid", "verbosity", "blockhash" },
         // bitcoind also accepts quoted amounts (slop; needs dispatch special case).
         method<"sendrawtransaction", string_t, nullopt<0.1>, nullopt<0.0>, command>{ "hexstring", "maxfeerate", "maxburnamount" },
         method<"testmempoolaccept", array_t, nullopt<0.1>>{ "rawtxs", "maxfeerate" },

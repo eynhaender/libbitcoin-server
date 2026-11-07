@@ -118,6 +118,13 @@ protected:
     /// Answer a dispatch parameter fault, stop the channel for other faults.
     void handle_dispatch_fault(const code& ec) NOEXCEPT;
 
+    /// A number or boolean verbosity (bitcoind), default if null or missing.
+    /// Another type is a type error, a fractional or out of range number a
+    /// misc error.
+    static code to_verbosity(int64_t& out,
+        const std::optional<network::rpc::value_t>& verbosity,
+        int64_t default_) NOEXCEPT;
+
 private:
     // Diagnostic row capture.
     void handle_row(network::diagnostics::row&& value,

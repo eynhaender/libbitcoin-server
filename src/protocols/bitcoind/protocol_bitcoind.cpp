@@ -473,6 +473,33 @@ void protocol_bitcoind::handle_dispatch_fault(const code& ec) NOEXCEPT
         stop(ec);
 }
 
+// bitcoind accepts boolean verbosity as zero (false) or one (true).
+code protocol_bitcoind::to_verbosity(int64_t& out,
+    const std::optional<value_t>& verbosity, int64_t default_) NOEXCEPT
+{
+    if (!verbosity.has_value() ||
+        std::holds_alternative<null_t>(verbosity->value()))
+    {
+        out = default_;
+        return error::success;
+    }
+
+    if (const auto flag = std::get_if<boolean_t>(&verbosity->value()))
+    {
+        out = *flag ? one : zero;
+        return error::success;
+    }
+
+    const auto number = std::get_if<number_t>(&verbosity->value());
+    if (is_null(number))
+        return error::bitcoind::type_error;
+
+    if (!to_integer(out, *number))
+        return error::bitcoind::misc_error;
+
+    return error::success;
+}
+
 void protocol_bitcoind::capture_totals(totals_handler&& handler) NOEXCEPT
 {
     const auto captured = to_shared<diagnostics::rows>();

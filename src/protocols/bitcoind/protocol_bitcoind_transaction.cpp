@@ -134,7 +134,7 @@ bool protocol_bitcoind_transaction::handle_decode_raw_transaction(const code& ec
 // The hint is unused (not required).
 bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
     rpc_interface::get_raw_transaction, const std::string& txid,
-    double verbose, const std::string&) NOEXCEPT
+    const std::optional<value_t>& verbose, const std::string&) NOEXCEPT
 {
     if (stopped(ec))
         return false;
@@ -164,9 +164,9 @@ bool protocol_bitcoind_transaction::handle_get_raw_transaction(const code& ec,
     };
 
     int64_t requested{};
-    if (!to_integer(requested, verbose))
+    if (const auto code = to_verbosity(requested, verbose, verbosity::hexadecimal))
     {
-        send_error(error::bitcoind::misc_error);
+        send_error(code);
         return true;
     }
 

@@ -141,7 +141,7 @@ bool protocol_bitcoind_blockchain::handle_get_best_block_hash(const code& ec,
 
 bool protocol_bitcoind_blockchain::handle_get_block(const code& ec,
     rpc_interface::get_block, const std::string& blockhash,
-    double verbosity) NOEXCEPT
+    const std::optional<value_t>& verbosity) NOEXCEPT
 {
     if (stopped(ec))
         return false;
@@ -154,9 +154,9 @@ bool protocol_bitcoind_blockchain::handle_get_block(const code& ec,
     }
 
     int64_t requested{};
-    if (!to_integer(requested, verbosity))
+    if (const auto code = to_verbosity(requested, verbosity, block_verbosity::hashed))
     {
-        send_error(error::bitcoind::misc_error);
+        send_error(code);
         return true;
     }
 

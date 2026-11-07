@@ -274,6 +274,39 @@ BC_AUTO_TEST_CASE(bitcoind_rpc__getblock__negative_verbosity__clamped_hex)
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
 }
 
+BC_AUTO_TEST_CASE(bitcoind_rpc__getblock__false_verbosity__hex)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "false"));
+    BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getblock__true_verbosity__txid_list)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "true"));
+    BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").at("tx").at(0).is_string());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getblock__null_verbosity__txid_list)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "null"));
+    BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").at("tx").at(0).is_string());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getblock__string_verbosity__type_error)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "\"1\""));
+    BC_REQUIRE_MESSAGE(has_code(response, -3), serialize(response));
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getblock__object_verbosity__type_error)
+{
+    const auto response = rpc("getblock", hash_param(test::block9_hash, "{}"));
+    BC_REQUIRE_MESSAGE(has_code(response, -3), serialize(response));
+}
+
 BC_AUTO_TEST_CASE(bitcoind_rpc__getblockheader__genesis__self_inclusive_mediantime)
 {
     const auto response = rpc("getblockheader", hash_param(test::genesis.hash(), "true"));
@@ -518,6 +551,37 @@ BC_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__negative_verbosity__clamped_h
     const auto response = rpc("getrawtransaction", hash_param(txid, "-1"));
     BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
     REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__false_verbosity__hex)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid, "false"));
+    BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__true_verbosity__verbose)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid, "true"));
+    BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").at("vin").is_array());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__missing_verbosity__hex)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid));
+    BC_REQUIRE_MESSAGE(response.is_object() && response.as_object().contains("result"), serialize(response));
+    REQUIRE_NO_THROW_TRUE(response.at("result").is_string());
+}
+
+BC_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__string_verbosity__type_error)
+{
+    const auto txid = test::block1.transactions_ptr()->front()->hash(false);
+    const auto response = rpc("getrawtransaction", hash_param(txid, "\"1\""));
+    BC_REQUIRE_MESSAGE(has_code(response, -3), serialize(response));
 }
 
 BC_AUTO_TEST_CASE(bitcoind_rpc__getrawtransaction__unknown_txid__error)

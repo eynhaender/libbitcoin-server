@@ -61,7 +61,7 @@ protected:
         rpc_interface::get_best_block_hash) NOEXCEPT;
     bool handle_get_block(const code& ec,
         rpc_interface::get_block, const std::string&,
-        double verbosity) NOEXCEPT;
+        const std::optional<network::rpc::value_t>& verbosity) NOEXCEPT;
     bool handle_get_block_chain_info(const code& ec,
         rpc_interface::get_block_chain_info) NOEXCEPT;
     bool handle_get_block_count(const code& ec,

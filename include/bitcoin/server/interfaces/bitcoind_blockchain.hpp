@@ -31,7 +31,7 @@ struct bitcoind_blockchain_methods
     static constexpr std::tuple methods
     {
         method<"getbestblockhash">{},
-        method<"getblock", string_t, nullopt<1.0>>{ "blockhash", "verbosity" },
+        method<"getblock", string_t, nullable<value_t>>{ "blockhash", "verbosity" },
         method<"getblockchaininfo">{},
         method<"getblockcount">{},
         method<"getblockfilter", string_t, nullopt<"basic"_t>>{ "blockhash", "filtertype" },
