@@ -126,6 +126,17 @@ jobs:
           install -m 0755 "binaries/${{ matrix.baseline }}" "${LIBRARY}/${{ matrix.baseline }}"
           install -m 0755 "binaries/${{ matrix.optimized }}" "${LIBRARY}/${{ matrix.optimized }}"
 
+          # The service runs /usr/bin/bs, so it survives variant changes.
+          SYSTEMD="libbitcoin-server/.github/packaging/systemd"
+          install -D -m 0644 "${SYSTEMD}/bs.cfg" package/etc/libbitcoin-server/bs.cfg
+          install -D -m 0644 "${SYSTEMD}/libbitcoin-server.service" \
+            package/usr/lib/systemd/system/libbitcoin-server.service
+          install -D -m 0644 "${SYSTEMD}/libbitcoin-server.sysusers" \
+            package/usr/lib/sysusers.d/libbitcoin-server.conf
+          install -D -m 0644 "${SYSTEMD}/libbitcoin-server.tmpfiles" \
+            package/usr/lib/tmpfiles.d/libbitcoin-server.conf
+          echo /etc/libbitcoin-server/bs.cfg > package/DEBIAN/conffiles
+
           sed -e "s|@VERSION@|${VERSION}|" \
               -e "s|@ARCHITECTURE@|${{ matrix.architecture }}|" \
               -e "s|@INSTALLED_SIZE@|$(du -sk package/usr | cut -f1)|" \
@@ -138,6 +149,7 @@ jobs:
               "${PACKAGING}/postinst.in" > package/DEBIAN/postinst
 
           install -m 0755 "${PACKAGING}/prerm" package/DEBIAN/prerm
+          install -m 0755 "${PACKAGING}/postrm" package/DEBIAN/postrm
           chmod 0755 package/DEBIAN/postinst
 
           dpkg-deb --root-owner-group --build package \
@@ -199,6 +211,7 @@ jobs:
         shell: bash
         run: |
           PACKAGING="libbitcoin-server/.github/packaging/arch"
+          SYSTEMD="libbitcoin-server/.github/packaging/systemd"
           PKGVER="${VERSION//-/_}"
           SOURCE="build/libbitcoin-server-bin"
           mkdir -p "${SOURCE}"
@@ -209,10 +222,18 @@ jobs:
           }
 
           install -m 0755 "${PACKAGING}/bs" "${SOURCE}/bs"
+          install -m 0644 "${SYSTEMD}/bs.cfg" "${SOURCE}/bs.cfg"
+          install -m 0644 "${SYSTEMD}/libbitcoin-server.service" "${SOURCE}/libbitcoin-server.service"
+          install -m 0644 "${SYSTEMD}/libbitcoin-server.sysusers" "${SOURCE}/libbitcoin-server.sysusers"
+          install -m 0644 "${SYSTEMD}/libbitcoin-server.tmpfiles" "${SOURCE}/libbitcoin-server.tmpfiles"
           sed -e "s|@TAG@|${{ github.event.inputs.tag }}|" \
               -e "s|@PKGVER@|${PKGVER}|" \
               -e "s|@PGP_FINGERPRINT@|${{ needs.fetch.outputs.fingerprint }}|" \
               -e "s|@SHA256_BS@|$(sha "${PACKAGING}/bs")|" \
+              -e "s|@SHA256_CONFIG@|$(sha "${SYSTEMD}/bs.cfg")|" \
+              -e "s|@SHA256_SERVICE@|$(sha "${SYSTEMD}/libbitcoin-server.service")|" \
+              -e "s|@SHA256_SYSUSERS@|$(sha "${SYSTEMD}/libbitcoin-server.sysusers")|" \
+              -e "s|@SHA256_TMPFILES@|$(sha "${SYSTEMD}/libbitcoin-server.tmpfiles")|" \
               -e "s|@SHA256_SELECTOR_X64@|$(sha binaries/selector-linux-x64)|" \
               -e "s|@SHA256_BASELINE_X64@|$(sha binaries/bs-linux-x64)|" \
               -e "s|@SHA256_OPTIMIZED_X64@|$(sha binaries/bs-linux-x64-avx2-shani)|" \
@@ -242,7 +263,9 @@ jobs:
           mkdir -p packages
           mv "${SOURCE}"/*.pkg.tar.zst packages/
           tar -czf "packages/libbitcoin-server-${VERSION}-aur.tar.gz" -C build \
-            libbitcoin-server-bin/PKGBUILD libbitcoin-server-bin/.SRCINFO libbitcoin-server-bin/bs
+            libbitcoin-server-bin/PKGBUILD libbitcoin-server-bin/.SRCINFO libbitcoin-server-bin/bs \
+            libbitcoin-server-bin/bs.cfg libbitcoin-server-bin/libbitcoin-server.service \
+            libbitcoin-server-bin/libbitcoin-server.sysusers libbitcoin-server-bin/libbitcoin-server.tmpfiles
 
       - name: Upload package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
