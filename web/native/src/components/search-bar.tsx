@@ -17,7 +17,7 @@ export function SearchBar() {
   return (
     <form
       onSubmit={onSubmit}
-      className="border-accent/30 bg-surface/80 focus-within:border-accent flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-inner md:w-auto"
+      className="border-accent/30 bg-surface/80 focus-within:border-accent flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-inner md:w-auto lg:w-full"
     >
       <MagnifyingGlassIcon className="text-accent h-4 w-4" aria-hidden="true" />
       <input
@@ -25,7 +25,7 @@ export function SearchBar() {
         aria-label="Search blocks, transactions, and addresses"
         placeholder="Search blocks, transactions, addresses"
         title="Search by block height, hash, address, or outpoint (txid:vout)"
-        className="text-textPrimary placeholder:text-textMuted w-full bg-transparent focus:outline-none md:w-72"
+        className="text-textPrimary placeholder:text-textMuted w-full border-0 bg-transparent p-0 text-sm focus:ring-0 focus:outline-none md:w-72 lg:min-w-0"
         value={value}
         onChange={(event) => {
           setValue(event.target.value);

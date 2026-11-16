@@ -1,0 +1,126 @@
+/* Skins shared by the admin dashboard and the explorer, after libbitcoin.org.
+ * Classic is the base palette; each other skin overrides the theme variables
+ * under :root[data-skin], which skins.ts sets. */
+
+@theme {
+  --color-background: #272822;
+  --color-surface: #1f211c;
+  --color-accent: #ffa022;
+  --color-accentSecondary: #c85637;
+  --color-textPrimary: #ededed;
+  --color-textMuted: #cfcfcf;
+}
+
+/* Moon */
+
+:root[data-skin='moon'] {
+  --color-background: #05080f;
+  --color-surface: #0a1220;
+  --color-accent: #7df9ff;
+  --color-accentSecondary: #ff4fd8;
+  --color-textPrimary: #e4f3ff;
+  --color-textMuted: #9fb4cf;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --skin-glow: 0 0 6px rgb(47 216 255 / 55%), 0 0 18px rgb(47 216 255 / 22%);
+  scrollbar-color: #1f4a66 var(--color-background);
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgb(47 216 255 / 10%), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgb(255 79 216 / 7%), transparent 60%),
+    linear-gradient(rgb(47 216 255 / 3.5%) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgb(47 216 255 / 3.5%) 1px, transparent 1px) 0 0 / 32px 32px,
+    var(--color-background);
+  background-attachment: fixed;
+}
+
+:root[data-skin='moon'] body {
+  background: transparent;
+}
+
+:root[data-skin='moon'] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(0 0 0 / 16%) 0 1px, transparent 1px 3px);
+}
+
+:root[data-skin='moon'] ::selection {
+  background: rgb(255 79 216 / 35%);
+  color: #fff;
+}
+
+:root[data-skin='moon'] .skin-header {
+  border-image: linear-gradient(90deg, #2fd8ff, #ff4fd8 55%, transparent) 1;
+}
+
+:root[data-skin='moon'] .skin-brand {
+  text-shadow: var(--skin-glow);
+}
+
+:root[data-skin='moon'] h1 {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-shadow: var(--skin-glow);
+}
+
+/* Spec */
+
+:root[data-skin='spec'] {
+  color-scheme: light;
+  --color-background: #fbfaf5;
+  --color-surface: #fbfaf5;
+  --color-accent: #000000;
+  --color-accentSecondary: #666666;
+  --color-textPrimary: #111111;
+  --color-textMuted: #222222;
+  --font-sans: 'Courier New', Courier, 'Nimbus Mono PS', monospace;
+  --font-mono: var(--font-sans);
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+
+  /* Status shades meant for dark backgrounds, darkened for paper. */
+  --color-white: #111111;
+  --color-emerald-950: #ecfdf5;
+  --color-amber-950: #fffbeb;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #065f46;
+  --color-amber-200: #92400e;
+  --color-amber-300: #92400e;
+  --color-orange-300: #9a3412;
+  --color-red-300: #991b1b;
+  --color-rose-300: #9f1239;
+  --color-slate-300: #475569;
+  --color-zinc-300: #52525b;
+  --color-sky-300: #075985;
+  --color-cyan-300: #155e75;
+  --color-blue-300: #1e40af;
+  --color-indigo-300: #3730a3;
+  --color-violet-300: #5b21b6;
+}
+
+:root[data-skin='spec'] ::selection {
+  background: var(--color-textPrimary);
+  color: var(--color-background);
+}
+
+/* Form check marks are white; give them ink to sit on. */
+:root[data-skin='spec'] input[type='checkbox']:checked {
+  background-color: var(--color-textPrimary);
+}
+
+/* The double rule is 2px thicker; keep the header height of the other skins. */
+:root[data-skin='spec'] .skin-header {
+  border-bottom: 3px double var(--color-textPrimary);
+}
+
+:root[data-skin='spec'] .skin-header > div {
+  padding-bottom: calc(0.75rem - 2px);
+}

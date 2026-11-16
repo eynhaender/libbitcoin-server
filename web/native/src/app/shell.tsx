@@ -1,6 +1,7 @@
 import { useLayoutEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { SearchBar } from '@/components/search-bar';
+import { SkinSelect } from '@/components/skin-select';
 import { StatusPill } from '@/components/status-pill';
 import { CommandPalette } from '@/components/command-palette';
 import { RouteContent } from './route-navigation';
@@ -49,13 +50,13 @@ export function AppShell() {
   }, [configuration, isLibbitcoin, location, navigate, turboActive]);
 
   return (
-    <div className="bg-background text-textPrimary min-h-screen">
-      <header className="border-accent/30 bg-surface/90 border-b backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-4">
-          <div className="flex flex-wrap items-center gap-4">
+    <div className="text-textPrimary min-h-screen">
+      <header className="skin-header border-accent/30 bg-surface/90 sticky top-0 z-40 border-b backdrop-blur">
+        <div className="mx-auto max-w-7xl px-4 py-3">
+          <div className="flex min-h-10 flex-wrap items-center gap-4 lg:flex-nowrap">
             <NavLink
               to={dashboardPath()}
-              className="text-accent order-1 text-lg font-semibold tracking-tight"
+              className="skin-brand text-accent order-1 shrink-0 text-lg font-semibold tracking-tight"
             >
               Libbitcoin Server
             </NavLink>
@@ -90,7 +91,7 @@ export function AppShell() {
                 Investigations
               </NavLink>
             </nav>
-            <div className="order-2 min-w-[12rem] flex-1 md:order-4 md:flex-none">
+            <div className="order-2 min-w-[12rem] flex-1 md:order-4 md:flex-none lg:min-w-0 lg:shrink">
               <SearchBar />
             </div>
             <div className="order-3 flex w-full flex-wrap items-center gap-3 md:order-3 md:ml-auto md:w-auto md:flex-nowrap">
@@ -140,6 +141,7 @@ export function AppShell() {
                   })}
                 </select>
               )}
+              <SkinSelect />
             </div>
           </div>
         </div>

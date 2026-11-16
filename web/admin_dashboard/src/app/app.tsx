@@ -1,5 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { Settings } from '@/components/settings';
+import { SkinSelect } from '@/components/skin-select';
 import { EventView } from '@/components/event-view';
 import { LogView } from '@/components/log-view';
 import { Overview } from '@/components/overview';
@@ -60,16 +61,16 @@ export function App() {
   }
 
   return (
-    <div className="bg-background text-textPrimary min-h-screen">
-      <header className="border-accent/30 bg-surface/90 border-b backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-4">
-          <div className="flex flex-wrap items-center gap-4">
+    <div className="text-textPrimary min-h-screen">
+      <header className="skin-header border-accent/30 bg-surface/90 sticky top-0 z-40 border-b backdrop-blur">
+        <div className="mx-auto max-w-7xl px-4 py-3">
+          <div className="flex min-h-10 flex-wrap items-center gap-4">
             <button
               type="button"
               onClick={() => {
                 setView('overview');
               }}
-              className="text-accent order-1 text-lg font-semibold tracking-tight"
+              className="skin-brand text-accent order-1 text-lg font-semibold tracking-tight"
             >
               Libbitcoin Server
             </button>
@@ -106,6 +107,7 @@ export function App() {
                 <StatusDot connected={adminStatus.phase === 'connected'} label="Admin" />
                 <StatusDot connected={native.transport !== 'none'} label="Native" />
               </div>
+              <SkinSelect />
               <button
                 type="button"
                 onClick={() => {

@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 @config '../tailwind.config.js';
+@import '../../shared/skins.css';
+
+/* Match the explorer explicitly, independent of Tailwind's default font stack. */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
+}
 
 :root {
   color-scheme: dark;
@@ -28,6 +36,6 @@ body {
 }
 
 .uplot .u-select {
-  background: rgb(255 160 34 / 12%);
-  border: 1px solid rgb(255 160 34 / 35%);
+  background: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, transparent);
 }
