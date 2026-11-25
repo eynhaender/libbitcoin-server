@@ -15,6 +15,7 @@ interface TemplateSceneViewProps {
   template: number;
   selected: number | null;
   mode: HeightMode;
+  orbit: boolean;
   onSelect: (transaction: number) => void;
   // The camera kept while the scene is closed, restored when it reopens.
   view?: MutableRefObject<Camera | null>;
@@ -38,6 +39,7 @@ export function TemplateSceneView({
   template,
   selected,
   mode,
+  orbit,
   onSelect,
   view,
 }: TemplateSceneViewProps) {
@@ -80,6 +82,10 @@ export function TemplateSceneView({
   useEffect(() => {
     scene.current?.setMode(mode);
   }, [mode]);
+
+  useEffect(() => {
+    scene.current?.setOrbit(orbit);
+  }, [orbit]);
 
   useEffect(() => {
     scene.current?.setSelection(template, selected);

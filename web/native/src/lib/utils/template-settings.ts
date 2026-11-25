@@ -7,6 +7,7 @@ export type PageSection = 'details' | 'size' | 'members';
 
 const STORAGE_KEY = 'libbitcoinTemplateDisplay';
 const HEIGHT_KEY = 'libbitcoinTemplateHeight';
+const ORBIT_KEY = 'libbitcoinTemplateOrbit';
 const HEIGHT_MODES: readonly HeightMode[] = ['chunk', 'own', 'fee'];
 const SECTION_KEYS: Record<PageSection, string> = {
   details: 'libbitcoinSectionDetails',
@@ -76,6 +77,27 @@ export function loadHeightMode(storage: Storage | null = browserStorage()): Heig
 export function saveHeightMode(mode: HeightMode, storage: Storage | null = browserStorage()): void {
   try {
     storage?.setItem(HEIGHT_KEY, mode);
+  } catch {
+    // The in-memory selection still works when storage is unavailable.
+  }
+}
+
+// The 3D view orbits unless turned off, or reduced motion is preferred.
+export function loadOrbit(
+  storage: Storage | null = browserStorage(),
+  reduced: boolean = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+): boolean {
+  try {
+    const stored = storage?.getItem(ORBIT_KEY);
+    return stored === 'on' ? true : stored === 'off' ? false : !reduced;
+  } catch {
+    return !reduced;
+  }
+}
+
+export function saveOrbit(orbit: boolean, storage: Storage | null = browserStorage()): void {
+  try {
+    storage?.setItem(ORBIT_KEY, orbit ? 'on' : 'off');
   } catch {
     // The in-memory selection still works when storage is unavailable.
   }

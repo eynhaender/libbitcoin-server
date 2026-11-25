@@ -20,9 +20,11 @@ import { toPoolTemplates, type TemplateElement } from '@/lib/utils/pool-template
 import type { Camera, HeightMode } from '@/lib/utils/template-scene';
 import {
   loadHeightMode,
+  loadOrbit,
   loadSectionExpanded,
   loadTemplateDisplay,
   saveHeightMode,
+  saveOrbit,
   saveSectionExpanded,
   saveTemplateDisplay,
   type TemplateDisplay,
@@ -79,6 +81,7 @@ export function BlockViewer({
   );
   const [display, setDisplay] = useState(loadTemplateDisplay);
   const [mode, setMode] = useState<HeightMode>(loadHeightMode);
+  const [orbit, setOrbit] = useState(loadOrbit);
   const coinbaseElement = coinbase ? elements.at(0) : undefined;
   const [selection, setSelection] = useState<Selection | null>(null);
   const valid =
@@ -148,7 +151,24 @@ export function BlockViewer({
       <header className="flex flex-wrap items-end justify-end gap-4">
         <div className="flex flex-wrap gap-2 text-sm">
           {display === '3d' && (
-            <Toggle label="Box height" options={heights} value={mode} onChange={updateMode} />
+            <>
+              <button
+                type="button"
+                aria-pressed={orbit}
+                onClick={() => {
+                  saveOrbit(!orbit);
+                  setOrbit(!orbit);
+                }}
+                className={`rounded-md border px-3 py-2 font-medium ${
+                  orbit
+                    ? 'border-accent/40 bg-accentSecondary/20 text-accent'
+                    : 'border-accent/30 text-textMuted hover:text-accent hover:bg-accentSecondary/10'
+                }`}
+              >
+                Orbit
+              </button>
+              <Toggle label="Box height" options={heights} value={mode} onChange={updateMode} />
+            </>
           )}
           <Toggle label="Display" options={displays} value={display} onChange={updateDisplay} />
         </div>
@@ -168,6 +188,7 @@ export function BlockViewer({
               template={0}
               selected={viewed}
               mode={mode}
+              orbit={orbit}
               onSelect={select}
               view={view}
             />

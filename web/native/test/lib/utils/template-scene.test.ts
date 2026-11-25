@@ -2,9 +2,11 @@ import { expect, test } from 'vitest';
 import { mixColor, parseHexColor } from '@/lib/utils/template-scene';
 import {
   loadHeightMode,
+  loadOrbit,
   loadSectionExpanded,
   loadTemplateDisplay,
   saveHeightMode,
+  saveOrbit,
   saveSectionExpanded,
   saveTemplateDisplay,
 } from '@/lib/utils/template-settings';
@@ -86,4 +88,20 @@ test('template_settings__save_height_mode__fee__loads_fee', () => {
   const storage = memoryStorage();
   saveHeightMode('fee', storage);
   expect(loadHeightMode(storage)).toBe('fee');
+});
+
+test('template_settings__load_orbit__unset__on', () => {
+  expect(loadOrbit(memoryStorage(), false)).toBe(true);
+});
+
+test('template_settings__load_orbit__unset_reduced_motion__off', () => {
+  expect(loadOrbit(memoryStorage(), true)).toBe(false);
+});
+
+test('template_settings__save_orbit__off__round_trips', () => {
+  const storage = memoryStorage();
+  saveOrbit(false, storage);
+  expect(loadOrbit(storage, false)).toBe(false);
+  saveOrbit(true, storage);
+  expect(loadOrbit(storage, true)).toBe(true);
 });
