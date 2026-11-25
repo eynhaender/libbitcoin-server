@@ -214,6 +214,33 @@ export function useFees() {
   });
 }
 
+export interface MinedBlock {
+  summary: BlockSummary;
+  stats: BlockStats;
+  // Its txs less the coinbase, in block order.
+  transactions: TemplateTransaction[];
+}
+
+/** The latest blocks, newest first, each with its stats and txs. */
+export function useMinedBlocks(count: number) {
+  return useBlockchainQuery<MinedBlock[]>({
+    queryKey: ['blocks', 'mined', { count }],
+    queryFn: async (client) => {
+      const latest = await client.getLatestBlocks(count);
+      return Promise.all(
+        latest.map(async (summary) => {
+          const [stats, transactions] = await Promise.all([
+            client.getBlockStats(summary.hash),
+            client.getBlockTransactionDetails({ chain: 'hash', id: summary.hash }),
+          ]);
+          return { summary, stats, transactions: transactions.slice(1) };
+        })
+      );
+    },
+    blockRefresh: 'always',
+  });
+}
+
 // Templates are refreshed by template notifications, kept once mined.
 export function useHeaderTops() {
   return useBlockchainQuery<HeaderTop[]>({
@@ -251,10 +278,11 @@ export function useUnconfirmedTransactionDetails() {
   });
 }
 
-export function useTemplate(height: number) {
+export function useTemplate(height: number, options?: { enabled?: boolean }) {
   return useBlockchainQuery<TemplateTransaction[]>({
     queryKey: ['template', { height }],
     queryFn: (client) => client.getTemplate(height),
+    enabled: options?.enabled,
     staleTime: Infinity,
     retry: false,
   });

@@ -52,6 +52,20 @@ const TALLEST = 4.2;
 const LOWEST = 0.12;
 const PLINTH = 0.35;
 
+// One turn of the camera per minute while spinning, in radians per millisecond.
+const SPIN = (2 * Math.PI) / 60_000;
+
+// While dropping, boxes fall in block order over the fill, each for the fall
+// from the drop height, and the full block holds before it clears and refills.
+const FILL = 12_000;
+const FALL = 900;
+const HOLD = 3_000;
+const DROP = 9;
+
+// The overview's extra gap between the projected and the mined platforms.
+const SPLIT = 6;
+const OVERVIEW_ELEVATION = 0.62;
+
 interface Box {
   transaction: number;
   x0: number;
@@ -74,6 +88,17 @@ export interface Camera {
   z: number;
 }
 
+export interface SceneLabel {
+  title: string;
+  detail: string;
+  extra?: string;
+}
+
+export interface SceneOptions {
+  // A fixed camera over all platforms, hover and click only.
+  overview?: boolean;
+}
+
 interface Drag {
   x: number;
   y: number;
@@ -85,12 +110,8 @@ interface Drag {
 
 type Face = number[];
 
-function templateCenter(template: number): number {
-  return template * (WIDTH + GAP) + WIDTH / 2;
-}
-
-function homeCamera(template: number): Camera {
-  return { azimuth: -0.62, elevation: 0.6, distance: 22, x: templateCenter(template), y: 0.6, z: DEPTH / 2 };
+function homeCamera(x: number): Camera {
+  return { azimuth: -0.62, elevation: 0.6, distance: 22, x, y: 0.6, z: DEPTH / 2 };
 }
 
 function inside(x: number, y: number, face: Face): boolean {
@@ -111,8 +132,12 @@ export class TemplateScene {
   private order = new Uint32Array(0);
   private depths = new Float32Array(0);
   private hits: Array<{ box: number; faces: Face[] }> = [];
-  private labels: Array<{ title: string; detail: string }> = [];
-  private camera = homeCamera(0);
+  private labels: SceneLabel[] = [];
+  private names: SceneLabel[] | null = null;
+  // The first mined platform of the overview, after the gap; -1 for none.
+  private split = -1;
+  private readonly overview: boolean;
+  private camera = homeCamera(WIDTH / 2);
   private goal: { x: number; z: number } | null = null;
   private mode: HeightMode = 'chunk';
   private template = 0;
@@ -122,6 +147,13 @@ export class TemplateScene {
   private drag: Drag | null = null;
   private touches = new Map<number, [number, number]>();
   private frame = 0;
+  private spin = false;
+  private last = 0;
+  private drop = false;
+  private dropped = 0;
+  // Per box: its share of the fill (block order), and its lift (NaN until it falls).
+  private ranks = new Float32Array(0);
+  private lifts = new Float32Array(0);
   private ratio = 1;
   private palette: ScenePalette = {
     surface: [31, 33, 28],
@@ -134,11 +166,13 @@ export class TemplateScene {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly onSelect: (transaction: number) => void,
-    private readonly animate: boolean
+    private readonly animate: boolean,
+    options: SceneOptions = {}
   ) {
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Canvas 2D context unavailable.');
     this.context = context;
+    this.overview = options.overview ?? false;
     canvas.addEventListener('pointerdown', this.pointerDown);
     canvas.addEventListener('pointermove', this.pointerMove);
     canvas.addEventListener('pointerup', this.pointerUp);
@@ -170,7 +204,7 @@ export class TemplateScene {
     const largest = Math.max(1, ...pool.transactions.map((transaction) => transaction.fee));
     const boxes: Box[] = [];
     pool.templates.forEach((_, template) => {
-      const offset = template * (WIDTH + GAP);
+      const offset = this.offset(template);
       for (const { transaction, rect } of templateTiles(pool, template, WIDTH, DEPTH)) {
         const entry = pool.transactions[transaction];
         // Keep a seam between boxes without swallowing the smallest ones.
@@ -200,12 +234,39 @@ export class TemplateScene {
     this.heights = Float32Array.from(boxes, (box) => box.heights[this.mode]);
     this.order = Uint32Array.from(boxes, (_, index) => index);
     this.depths = new Float32Array(boxes.length);
+    this.ranks = new Float32Array(boxes.length);
+    const sequence = boxes.map((_, index) => index).sort((left, right) => boxes[left].transaction - boxes[right].transaction);
+    sequence.forEach((box, rank) => {
+      this.ranks[box] = rank / Math.max(1, sequence.length - 1);
+    });
+    this.lifts = new Float32Array(boxes.length);
+    this.dropped = 0;
     this.labels = pool.templates.map((template, index) => ({
       title: templateName(pool, index),
       detail: `~${formatTemplateRate(templateRates(pool, template).median)} sat/vB · ${formatInteger(template.count)} txs`,
     }));
     this.hover = -1;
     this.paint();
+    this.request();
+  }
+
+  // Labels in place of the template names and rates, null to restore them.
+  setLabels(labels: SceneLabel[] | null): void {
+    this.names = labels;
+    this.request();
+  }
+
+  // Set before the pool, as box positions follow it.
+  setSplit(split: number): void {
+    this.split = split;
+  }
+
+  // Shift the overview by platforms, then glide it back into place, so the
+  // platforms appear to move along by that many.
+  slide(platforms: number): void {
+    if (!this.overview || !this.animate || !this.pool) return;
+    this.camera.x = this.overviewCenter() + platforms * (WIDTH + GAP);
+    this.goal = { x: this.overviewCenter(), z: DEPTH / 2 };
     this.request();
   }
 
@@ -248,8 +309,23 @@ export class TemplateScene {
   }
 
   resetView(): void {
-    this.camera = homeCamera(this.template);
+    this.camera = homeCamera(this.center(this.template));
     this.goal = null;
+    this.request();
+  }
+
+  // Orbit the camera slowly around the platform until stopped.
+  setSpin(spin: boolean): void {
+    this.spin = spin;
+    this.last = 0;
+    this.request();
+  }
+
+  // Drop the boxes in from above in block order, repeatedly, until stopped.
+  setDrop(drop: boolean): void {
+    this.drop = drop;
+    this.dropped = 0;
+    if (!drop) this.lifts.fill(0);
     this.request();
   }
 
@@ -262,24 +338,72 @@ export class TemplateScene {
     }
   }
 
+  private offset(template: number): number {
+    return template * (WIDTH + GAP) + (this.split >= 0 && template >= this.split ? SPLIT : 0);
+  }
+
+  private center(template: number): number {
+    return this.offset(template) + WIDTH / 2;
+  }
+
+  private overviewCenter(): number {
+    const count = this.pool?.templates.length ?? 1;
+    return (this.offset(count - 1) + WIDTH) / 2;
+  }
+
+  // Look straight at all platforms, from as far as fits them in the width.
+  private fit(): void {
+    const count = this.pool?.templates.length ?? 1;
+    const width = this.canvas.width / this.ratio;
+    const height = this.canvas.height / this.ratio;
+    const half = (this.offset(count - 1) + WIDTH) / 2 + 1.2;
+    const camera = this.camera;
+    camera.azimuth = 0;
+    camera.elevation = OVERVIEW_ELEVATION;
+    camera.distance = (half * height * 1.15) / (width / 2) + DEPTH / 2 + 1;
+    // Aim between the platforms and their labels, centering both.
+    camera.y = -1.6;
+    if (!this.goal) camera.x = this.overviewCenter();
+    camera.z = DEPTH / 2;
+  }
+
   private glide(template: number): void {
-    const goal = { x: templateCenter(template), z: DEPTH / 2 };
+    if (this.overview) return;
+    const goal = { x: this.center(template), z: DEPTH / 2 };
     if (this.animate) this.goal = goal;
     else Object.assign(this.camera, goal);
   }
 
   private request(): void {
     if (this.frame) return;
-    this.frame = requestAnimationFrame(() => {
+    this.frame = requestAnimationFrame((time) => {
       this.frame = 0;
-      if (this.step()) this.request();
+      if (this.step(time)) this.request();
     });
   }
 
   // Advance animations and draw; true while anything is still moving.
-  private step(): boolean {
+  private step(time: number): boolean {
     let moving = false;
     const camera = this.camera;
+    if (this.spin) {
+      // Hold still under a drag, and skip the gap of a hidden tab.
+      if (this.last && !this.drag)
+        camera.azimuth = (camera.azimuth - Math.min(100, time - this.last) * SPIN) % (2 * Math.PI);
+      this.last = time;
+      moving = true;
+    }
+
+    if (this.drop) {
+      if (!this.dropped) this.dropped = time;
+      const phase = (time - this.dropped) % (FILL + FALL + HOLD);
+      for (let index = 0; index < this.lifts.length; index += 1) {
+        const fallen = (phase - this.ranks[index] * FILL) / FALL;
+        this.lifts[index] = fallen < 0 ? Number.NaN : fallen >= 1 ? 0 : DROP * (1 - fallen * fallen);
+      }
+      moving = true;
+    }
+
     if (this.goal) {
       camera.x += (this.goal.x - camera.x) * 0.14;
       camera.z += (this.goal.z - camera.z) * 0.14;
@@ -298,6 +422,7 @@ export class TemplateScene {
       } else this.heights[index] = target;
     }
 
+    if (this.overview) this.fit();
     this.draw();
     return moving;
   }
@@ -310,7 +435,7 @@ export class TemplateScene {
   };
 
   private draw(): void {
-    const { context, camera, palette, boxes, heights } = this;
+    const { context, camera, palette, boxes, heights, lifts } = this;
     const width = this.canvas.width / this.ratio;
     const height = this.canvas.height / this.ratio;
     context.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
@@ -382,7 +507,7 @@ export class TemplateScene {
     };
 
     const count = this.pool.templates.length;
-    const end = count * (WIDTH + GAP) + 4;
+    const end = this.offset(count - 1) + WIDTH + GAP + 4;
     const line = [0, 0, 0, 0];
     context.strokeStyle = rgba(palette.muted, 0.08);
     context.lineWidth = 1;
@@ -402,11 +527,28 @@ export class TemplateScene {
         context.stroke();
       }
 
+    // The divider between the projected and the mined platforms.
+    if (this.split > 0 && this.split < count) {
+      const divider = this.offset(this.split) - (GAP + SPLIT) / 2;
+      const [near, far] = [[0, 0], [0, 0]];
+      if (project(divider, ground, DEPTH + 2, near, 0) && project(divider, ground, -2, far, 0)) {
+        context.save();
+        context.setLineDash([6, 6]);
+        context.strokeStyle = rgba(palette.text, 0.5);
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.moveTo(near[0], near[1]);
+        context.lineTo(far[0], far[1]);
+        context.stroke();
+        context.restore();
+      }
+    }
+
     const platforms = Array.from({ length: count }, (_, index) => index).sort(
-      (left, right) => Math.abs(templateCenter(right) - ex) - Math.abs(templateCenter(left) - ex)
+      (left, right) => Math.abs(this.center(right) - ex) - Math.abs(this.center(left) - ex)
     );
     for (const template of platforms) {
-      const offset = template * (WIDTH + GAP);
+      const offset = this.offset(template);
       const current = template === this.template;
       prism(
         [offset - 0.4, offset + WIDTH + 0.4, -PLINTH, 0, -0.4, DEPTH + 0.4],
@@ -423,9 +565,10 @@ export class TemplateScene {
     for (let index = 0; index < boxes.length; index += 1) {
       const box = boxes[index];
       const dx = (box.x0 + box.x1) / 2 - ex;
-      const dy = heights[index] / 2 - ey;
+      const dy = lifts[index] + heights[index] / 2 - ey;
       const dz = (box.z0 + box.z1) / 2 - ez;
-      this.depths[index] = dx * dx + dy * dy + dz * dz;
+      // A box yet to fall sorts last and is skipped.
+      this.depths[index] = Number.isNaN(dy) ? -1 : dx * dx + dy * dy + dz * dz;
     }
     const depths = this.depths;
     this.order.sort((left, right) => depths[right] - depths[left]);
@@ -433,9 +576,10 @@ export class TemplateScene {
     const seam = rgba(palette.surface, 0.55);
     this.hits = [];
     for (const index of this.order) {
-      const box = boxes[index];
+      const [box, lift] = [boxes[index], lifts[index]];
+      if (Number.isNaN(lift)) continue;
       const faces: Face[] = [];
-      prism([box.x0, box.x1, 0, heights[index], box.z0, box.z1], [box.top, box.sideX, box.sideZ], seam, faces);
+      prism([box.x0, box.x1, lift, lift + heights[index], box.z0, box.z1], [box.top, box.sideX, box.sideZ], seam, faces);
       this.hits.push({ box: index, faces });
     }
 
@@ -445,8 +589,8 @@ export class TemplateScene {
       const text = rgba(palette.text, 1);
       for (const member of this.pool.chunks[selected.chunk].transactions) {
         const index = boxes.findIndex((box) => box.transaction === member);
-        if (index < 0) continue;
-        const [box, top] = [boxes[index], heights[index]];
+        if (index < 0 || Number.isNaN(lifts[index])) continue;
+        const [box, top] = [boxes[index], lifts[index] + heights[index]];
         const mine = member === this.selected;
         fill(quad([box.x0, top, box.z0, box.x1, top, box.z0, box.x1, top, box.z1, box.x0, top, box.z1]), null, mine ? accent : text, mine ? 2.5 : 1.5);
       }
@@ -454,14 +598,22 @@ export class TemplateScene {
 
     context.textAlign = 'center';
     context.textBaseline = 'top';
-    this.labels.forEach((label, template) => {
-      if (!project(templateCenter(template), -PLINTH, DEPTH + 1.1, line, 0)) return;
+    const span = [0, 0, 0, 0];
+    (this.names ?? this.labels).forEach((label, template) => {
+      if (!project(this.center(template), -PLINTH, DEPTH + 1.1, line, 0)) return;
+      // At most as wide as the platform and its gap, and within the canvas.
+      const fits =
+        project(this.offset(template) - GAP / 2, -PLINTH, DEPTH + 1.1, span, 0) &&
+        project(this.offset(template) + WIDTH + GAP / 2, -PLINTH, DEPTH + 1.1, span, 2);
+      const edge = 2 * Math.max(0, Math.min(line[0], width - line[0]) - 4);
+      const room = fits ? Math.min(span[2] - span[0], edge) : edge;
       context.font = `600 13px ${palette.font}`;
       context.fillStyle = rgba(template === this.template ? palette.accent : palette.muted, 1);
-      context.fillText(label.title, line[0], line[1]);
+      context.fillText(label.title, line[0], line[1], room);
       context.font = `12px ${palette.font}`;
       context.fillStyle = rgba(palette.muted, 1);
-      context.fillText(label.detail, line[0], line[1] + 17);
+      context.fillText(label.detail, line[0], line[1] + 17, room);
+      if (label.extra) context.fillText(label.extra, line[0], line[1] + 33, room);
     });
 
     const hovered = boxes.at(this.hover);
@@ -537,6 +689,7 @@ export class TemplateScene {
     const [dx, dy] = [x - drag.x, y - drag.y];
     [drag.x, drag.y] = [x, y];
     if (Math.abs(x - drag.startX) + Math.abs(y - drag.startY) > 4) drag.moved = true;
+    if (this.overview) return;
     const camera = this.camera;
     if (drag.pan) {
       this.pan(dx, dy);
@@ -599,11 +752,14 @@ export class TemplateScene {
   };
 
   private readonly wheel = (event: WheelEvent): void => {
+    // The overview leaves the wheel to scroll the page.
+    if (this.overview) return;
     event.preventDefault();
     this.zoom(Math.exp(event.deltaY * 0.0012));
   };
 
   private readonly keyDown = (event: KeyboardEvent): void => {
+    if (this.overview) return;
     const camera = this.camera;
     switch (event.key) {
       case 'ArrowLeft': {

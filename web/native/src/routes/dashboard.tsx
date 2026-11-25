@@ -19,6 +19,7 @@ import {
   formatShortRelativeTime,
   formatTimestamp,
 } from '@/lib/utils/format';
+import { AssemblyLine } from '@/components/assembly-line';
 import { HashText } from '@/components/hash-text';
 import { MinerShareCard } from '@/components/miner-share';
 import { BlockMinerValue } from '@/components/miner-value';
@@ -99,6 +100,8 @@ export function DashboardPage() {
           </div>
         </div>
       </header>
+
+      <AssemblyLine />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <OverviewCard

@@ -46,6 +46,17 @@ const ticks = [1, 2, 5, 10, 20, 50, 100, RATE_CEILING];
 // A tx of the view by its index, or the coinbase, which is not of the view.
 type Selection = number | 'coinbase';
 
+type Animation = 'off' | 'orbit' | 'drop';
+
+const animations: Array<{ id: Animation; label: string }> = [
+  { id: 'off', label: 'No animation' },
+  { id: 'orbit', label: 'Orbit' },
+  { id: 'drop', label: 'Drop' },
+];
+
+// How long each box height shows while the 3D view orbits.
+const CYCLE_MS = 5000;
+
 // The 3D camera, kept across the blocks and templates of the session.
 const view: { current: Camera | null } = { current: null };
 
@@ -80,6 +91,7 @@ export function BlockViewer({
   const [display, setDisplay] = useState(loadTemplateDisplay);
   const [mode, setMode] = useState<HeightMode>(loadHeightMode);
   const coinbaseElement = coinbase ? elements.at(0) : undefined;
+  const [animation, setAnimation] = useState<Animation>('off');
   const [selection, setSelection] = useState<Selection | null>(null);
   const valid =
     selection === 'coinbase'
@@ -107,6 +119,17 @@ export function BlockViewer({
     // A focus request is acted on once, when made.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.key]);
+
+  // Cycle the box heights while orbiting, without saving them as the choice.
+  useEffect(() => {
+    if (animation !== 'orbit' || display !== '3d') return;
+    const timer = setInterval(() => {
+      setMode((last) => heights[(heights.findIndex((entry) => entry.id === last) + 1) % heights.length].id);
+    }, CYCLE_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [animation, display]);
 
   function updateDisplay(next: TemplateDisplay) {
     saveTemplateDisplay(next);
@@ -148,7 +171,25 @@ export function BlockViewer({
       <header className="flex flex-wrap items-end justify-end gap-4">
         <div className="flex flex-wrap gap-2 text-sm">
           {display === '3d' && (
-            <Toggle label="Box height" options={heights} value={mode} onChange={updateMode} />
+            <>
+              <select
+                aria-label="Animation"
+                value={animation}
+                onChange={(event) => {
+                  setAnimation(event.target.value as Animation);
+                }}
+                className={`bg-surface focus:border-accent focus:ring-accent rounded-md border py-2 pr-8 pl-3 font-medium ${
+                  animation === 'off' ? 'border-accent/30 text-textMuted' : 'border-accent/40 text-accent'
+                }`}
+              >
+                {animations.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <Toggle label="Box height" options={heights} value={mode} onChange={updateMode} />
+            </>
           )}
           <Toggle label="Display" options={displays} value={display} onChange={updateDisplay} />
         </div>
@@ -168,6 +209,8 @@ export function BlockViewer({
               template={0}
               selected={viewed}
               mode={mode}
+              spin={animation !== 'off'}
+              drop={animation === 'drop'}
               onSelect={select}
               view={view}
             />

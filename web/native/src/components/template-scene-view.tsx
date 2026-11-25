@@ -15,12 +15,14 @@ interface TemplateSceneViewProps {
   template: number;
   selected: number | null;
   mode: HeightMode;
+  spin: boolean;
+  drop: boolean;
   onSelect: (transaction: number) => void;
   // The camera kept while the scene is closed, restored when it reopens.
   view?: MutableRefObject<Camera | null>;
 }
 
-function readPalette(): ScenePalette {
+export function readPalette(): ScenePalette {
   const styles = getComputedStyle(document.documentElement);
   const color = (name: string, fallback: readonly [number, number, number]) =>
     parseHexColor(styles.getPropertyValue(name), fallback);
@@ -38,6 +40,8 @@ export function TemplateSceneView({
   template,
   selected,
   mode,
+  spin,
+  drop,
   onSelect,
   view,
 }: TemplateSceneViewProps) {
@@ -80,6 +84,14 @@ export function TemplateSceneView({
   useEffect(() => {
     scene.current?.setMode(mode);
   }, [mode]);
+
+  useEffect(() => {
+    scene.current?.setSpin(spin);
+  }, [spin]);
+
+  useEffect(() => {
+    scene.current?.setDrop(drop);
+  }, [drop]);
 
   useEffect(() => {
     scene.current?.setSelection(template, selected);
