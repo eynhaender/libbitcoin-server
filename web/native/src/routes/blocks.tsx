@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { BlockMinerValue } from '@/components/miner-value';
 import { Spinner } from '@/components/spinner';
 import {
@@ -8,12 +8,13 @@ import {
   type BranchHeader,
   type ChainBranch,
 } from '@/lib/api/client';
-import { useBranches, useLatestBlocks } from '@/lib/hooks/useBlockchainData';
+import { useBranches, useLatestBlocks, useNetwork } from '@/lib/hooks/useBlockchainData';
 import { useNow } from '@/lib/hooks/useNow';
 import { usePageTitle } from '@/lib/hooks/usePageTitle';
 import { useWindowScrollToBottom } from '@/lib/hooks/useWindowScrollToBottom';
 import { formatBytes, formatInteger, formatShortRelativeTime } from '@/lib/utils/format';
-import { blockByHashPath, blockByHeightPath, templatePath } from '@/lib/utils/routes';
+import { notableBlocks } from '@/lib/utils/notable-blocks';
+import { blockByHashPath, blockByHeightPath, blocksPath, templatePath } from '@/lib/utils/routes';
 
 const PAGE_SIZE = 30;
 const ROW = 44;
@@ -37,27 +38,82 @@ interface Row {
 
 const laneX = (lane: number) => LANE / 2 + lane * LANE;
 
+// A block height typed by the user, digit group separators allowed.
+function parseHeight(text: string | null): number | undefined {
+  const digits = (text ?? '').replace(/[\s,.']/g, '');
+  if (!/^\d{1,10}$/.test(digits)) return undefined;
+  const height = Number(digits);
+  return Number.isSafeInteger(height) ? height : undefined;
+}
+
 // The chain as a tree, the top first and genesis last: the confirmed chain in
 // the first lane, the candidate headers above it, each weak branch in a lane
-// of its own from the block it builds on.
+// of its own from the block it builds on. A height in the query (?height=n)
+// starts the tree at that confirmed block instead of the top.
 export function BlocksPage() {
   usePageTitle('Blocks');
   const client = useBlockchainClient();
   const now = useNow();
+  const [params, setParams] = useSearchParams();
   const { data: latest, isLoading, isError } = useLatestBlocks(PAGE_SIZE);
   const { data: branches } = useBranches();
+  const { network } = useNetwork();
   const [older, setOlder] = useState<BlockSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const [target, setTarget] = useState('');
+  const [anchored, setAnchored] = useState<{ height: number; blocks: BlockSummary[] }>();
+  const [anchorFailed, setAnchorFailed] = useState(false);
+
+  // A height at or above the confirmed top is the top itself.
+  const latestTop = latest?.find((block) => !block.weak)?.height;
+  const requested = parseHeight(params.get('height'));
+  const jump =
+    requested !== undefined && latestTop !== undefined && requested < latestTop
+      ? requested
+      : undefined;
 
   useEffect(() => {
     setOlder([]);
-  }, [client]);
+    setAnchorFailed(false);
+    if (jump === undefined) return;
+    let live = true;
+    void client
+      .getBlocksBefore(jump, PAGE_SIZE)
+      .then((blocks) => {
+        if (live) setAnchored({ height: jump, blocks });
+      })
+      .catch(() => {
+        if (live) setAnchorFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client, jump]);
 
   const strong = useMemo(() => {
-    const recent = (latest ?? []).filter((block) => !block.weak);
-    const lowest = recent.at(-1)?.height;
-    return lowest === undefined ? [] : [...recent, ...older.filter((block) => block.height < lowest)];
-  }, [latest, older]);
+    const first =
+      jump === undefined
+        ? (latest ?? []).filter((block) => !block.weak)
+        : anchored?.height === jump
+          ? anchored.blocks
+          : [];
+    const lowest = first.at(-1)?.height;
+    return lowest === undefined ? [] : [...first, ...older.filter((block) => block.height < lowest)];
+  }, [jump, latest, anchored, older]);
+  const anchoring = jump !== undefined && anchored?.height !== jump && !anchorFailed;
+
+  const notable = useMemo(() => notableBlocks(network, latestTop), [network, latestTop]);
+  const jumpTo = (height: number) => {
+    setParams(latestTop !== undefined && height >= latestTop ? {} : { height: String(height) });
+    window.scrollTo({ top: 0 });
+  };
+  const goTo = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const height = parseHeight(target);
+    if (height === undefined) return;
+    jumpTo(height);
+    setTarget('');
+  };
 
   const lowest = strong.at(-1)?.height;
   const done = lowest === 0;
@@ -90,27 +146,87 @@ export function BlocksPage() {
   const top = strong.at(0)?.height;
   const laned = useMemo(() => toLanes(weak), [weak]);
   const rows = useMemo(
-    () => (lowest === undefined ? [] : toRows(strong, lead, weak, laned, lowest)),
-    [strong, lead, weak, laned, lowest]
+    () =>
+      lowest === undefined
+        ? []
+        : toRows(strong, lead, weak, laned, lowest, jump === undefined ? undefined : top),
+    [strong, lead, weak, laned, lowest, jump, top]
   );
   const lanes = Math.max(0, ...laned) + 1;
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 tabIndex={-1} className="text-accent text-2xl font-semibold">
-          Blocks
-        </h1>
-        <p className="text-textMuted text-sm">The confirmed blocks and any archived branches.</p>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 tabIndex={-1} className="text-accent text-2xl font-semibold">
+            Blocks
+          </h1>
+          <p className="text-textMuted text-sm">The confirmed blocks and any archived branches.</p>
+        </div>
+        <form onSubmit={goTo} className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <select
+            aria-label="Notable blocks"
+            title="Start the list at a notable block"
+            className="border-accent/40 bg-surface text-textPrimary focus:border-accent focus:ring-accent w-full truncate rounded-md border py-1.5 pr-8 pl-3 text-sm sm:w-64"
+            value={notable.some((block) => block.height === jump) ? String(jump) : ''}
+            onChange={(event) => {
+              const height = parseHeight(event.target.value);
+              if (height !== undefined) jumpTo(height);
+            }}
+          >
+            <option value="" disabled>
+              Notable blocks
+            </option>
+            {notable.map((block) => (
+              <option key={block.height} value={block.height}>
+                {formatInteger(block.height)} · {block.label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            inputMode="numeric"
+            aria-label="Block height"
+            placeholder="Height"
+            title="Start the list at this confirmed block height"
+            className="border-accent/40 bg-surface text-textPrimary placeholder:text-textMuted focus:border-accent focus:ring-accent w-32 rounded-md border px-3 py-1.5 text-sm tabular-nums"
+            value={target}
+            onChange={(event) => {
+              setTarget(event.target.value);
+            }}
+          />
+          <button
+            type="submit"
+            disabled={parseHeight(target) === undefined}
+            className="border-accent text-accent hover:border-accentSecondary hover:text-accentSecondary rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Go to
+          </button>
+        </form>
       </header>
 
-      {isError && <p className="text-accentSecondary text-sm">Could not load blocks.</p>}
-      {isLoading && <Spinner label="Loading blocks…" />}
+      {(isError || anchorFailed) && (
+        <p className="text-accentSecondary text-sm">Could not load blocks.</p>
+      )}
+      {(isLoading || anchoring) && <Spinner label="Loading blocks…" />}
 
       {rows.length > 0 && (
         <div className="border-accent/30 overflow-hidden rounded-xl border">
           <ul>
-            {top !== undefined && (
+            {jump !== undefined && (
+              <li className="border-accentSecondary/20 flex items-center border-b" style={{ height: ROW }}>
+                <Lanes lanes={lanes} />
+                <Link to={blocksPath()} className="text-accent hover:text-accentSecondary px-3 text-sm">
+                  Back to the top
+                </Link>
+                {latestTop !== undefined && (
+                  <span className="text-textMuted truncate text-xs">
+                    {formatInteger(latestTop - jump)} blocks above {formatInteger(jump)}
+                  </span>
+                )}
+              </li>
+            )}
+            {jump === undefined && top !== undefined && (
               <li className="border-accentSecondary/20 flex items-center border-b" style={{ height: ROW }}>
                 <Lanes lanes={lanes} template={templatePath(top + 1)} />
                 <Link
@@ -127,7 +243,7 @@ export function BlocksPage() {
             {rows.map((row) => (
               <li
                 key={row.height}
-                className="hover:bg-accentSecondary/10 flex items-center"
+                className={`hover:bg-accentSecondary/10 flex items-center${row.height === jump ? ' bg-accentSecondary/10' : ''}`}
                 style={{ height: ROW }}
               >
                 <Lanes lanes={lanes} row={row} />
@@ -167,13 +283,15 @@ function toLanes(weak: ChainBranch[]): number[] {
   });
 }
 
-// Rows from the highest top down to the lowest confirmed block loaded.
+// Rows from the highest top (or the highest height given) down to the lowest
+// confirmed block loaded.
 function toRows(
   strong: BlockSummary[],
   lead: ChainBranch | undefined,
   weak: ChainBranch[],
   laned: number[],
-  lowest: number
+  lowest: number,
+  highest?: number
 ): Row[] {
   const rows = new Map<number, Row>();
   const row = (height: number) => {
@@ -186,11 +304,14 @@ function toRows(
   };
 
   for (const block of strong) row(block.height).strong = block;
-  for (const header of lead?.headers ?? []) row(header.height).pending = header;
+  const above = (height: number) => highest !== undefined && height > highest;
+  for (const header of lead?.headers ?? []) {
+    if (!above(header.height)) row(header.height).pending = header;
+  }
   weak.forEach((branch, index) => {
     const base = branch.headers.at(-1)?.height;
     for (const header of branch.headers) {
-      if (header.height < lowest) continue;
+      if (header.height < lowest || above(header.height)) continue;
       row(header.height).nodes.push({
         lane: laned[index],
         header,
