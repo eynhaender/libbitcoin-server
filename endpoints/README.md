@@ -18,10 +18,10 @@ Integration tests for the client-server interfaces of libbitcoin-server
 | **Sparrow** | TCP + JSON-RPC 2.0 | `test_sparrow.py` | 13 |
 | **Transports** | TCP downgrade, HTTP POST, websocket | `test_transports.py` | 6 |
 | **Stratum v1** | TCP/HTTP/websocket + JSON-RPC 1.0 | `test_stratum_v1.py` | 45 |
-| **Robustness** (all services) | raw TCP/HTTP/websocket, misbehaving clients | `test_robustness_*.py`, `test_longrun.py` | 145 |
-| **Stratum v2** | websocket + binary frames | `test_stratum_v2.py` | 63 |
+| **Robustness** (all services) | raw TCP/HTTP/websocket, misbehaving clients | `test_robustness_*.py`, `test_longrun.py` | 148 |
+| **Stratum v2** | websocket + binary frames | `test_stratum_v2.py` | 65 |
 
-Test counts are test functions; parametrized cases run more (about 2,180 in
+Test counts are test functions; parametrized cases run more (about 2,200 in
 all).
 
 ## Prerequisites
@@ -475,6 +475,13 @@ Noise). The suite carries its own frame codec.
   and closing one channel retains the others
 - **Credentials:** a wrong password and a missing credential refuse the
   upgrade
+- **Resources:** with `--bs-pid`, 2,000 connections closed before
+  SetupConnection (over tcp and after the websocket upgrade) leave no memory
+  behind (RssAnon)
+
+A refreshed job (a new target) carries a later time than the job it
+refreshes. Share searches skip where the expected tries exceed 1/16 of the
+search budget, so a reachable search misses with probability e^-16.
 
 The share and block tests run where the targets are reachable, as for
 stratum v1. A regtest node adds to the stratum v1 configuration above:
@@ -526,6 +533,20 @@ fixture then checks after every case:
   host;
 - with `--bs-pid`, the process is alive and no thread stays pegged over two
   3 s windows. `--no-spin-check` turns the CPU check off.
+
+Two cases check more than containment:
+
+- `test_connect_and_close_releases_memory` (with `--bs-pid`): 300
+  connections closed before a first request (before the protocol handshake)
+  leave less than 64 MB behind (RssAnon, allocator reuse moves it in steps
+  of a request buffer).
+- `test_upgrade_host_and_origin_as_plain`: a websocket upgrade with an
+  opaque or foreign origin, or a foreign or empty host, is refused where the
+  same plain request is refused, and upgraded otherwise. A `host` and
+  `origin` configured on a service (`origin = allowed.example:80`) exercise
+  the refusals; the robustness hosts must then name a configured host (for
+  example `--bitcoind-rpc-host=127.0.0.1`). Electrum and Sparrow, without a
+  plain request or `allow_opaque_origin`, refuse an opaque origin upgrade.
 
 ```bash
 pytest test_robustness_*.py --btcd-username=robust --btcd-password=robust \

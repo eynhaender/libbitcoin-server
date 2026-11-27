@@ -75,6 +75,35 @@ def test_connect_and_close_without_bytes(svc):
         close(connect(svc.host, svc.port))
 
 
+# Memory closed connections may leave behind, in kB: the allocator reuses
+# freed request buffers (about 8 MB each), so RssAnon moves in their steps.
+RETAINED_KB = 64 * 1024
+
+
+def test_connect_and_close_releases_memory(svc, robust_env):
+    """
+    Connections closed before a first request (before the handshake of their
+    protocol) are released, their memory with them. Requires --bs-pid.
+    """
+    process = robust_env.process
+    if process is None:
+        pytest.skip("server memory not observable (--bs-pid)")
+
+    def cycle(count: int):
+        for _ in range(count):
+            close(connect(svc.host, svc.port))
+
+    cycle(100)
+    time.sleep(2)
+    before = process.anonymous_kb()
+    count = 300
+    cycle(count)
+    time.sleep(2)
+    growth = process.anonymous_kb() - before
+    assert growth < RETAINED_KB, \
+        f"{svc.name}: {growth} kB retained by {count} closed connections"
+
+
 def test_connect_and_reset_without_bytes(svc):
     for _ in range(50):
         reset(connect(svc.host, svc.port))

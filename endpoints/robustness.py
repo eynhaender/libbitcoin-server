@@ -824,6 +824,14 @@ class Process:
                 busy.append((tid, round(used, 2)))
         return busy
 
+    def anonymous_kb(self) -> int:
+        """Resident anonymous memory (heap), not the mapped store."""
+        with open(f"/proc/{self.pid}/status") as f:
+            for line in f:
+                if line.startswith("RssAnon:"):
+                    return int(line.split()[1])
+        return 0
+
     def rss_mb(self) -> float:
         try:
             with open(f"/proc/{self.pid}/status") as f:

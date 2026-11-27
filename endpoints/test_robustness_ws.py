@@ -107,6 +107,68 @@ def test_bad_upgrade_gets_reaction(svc, case):
     assert_reacts(out, case)
 
 
+# Services that serve plain http requests beside the upgrade.
+HTTP_SERVICES = ("native", "esplora", "admin", "bitcoind", "btcd")
+
+
+def _headed(request: bytes, origin: str | None = None,
+            host: str | None = None, authority: str = "") -> bytes:
+    """The request with an Origin field and/or another Host."""
+    if host is not None:
+        request = request.replace(f"Host: {authority}\r\n".encode(),
+                                  f"Host: {host}\r\n".encode(), 1)
+    if origin is not None:
+        line, rest = request.split(b"\r\n", 1)
+        request = line + f"\r\nOrigin: {origin}\r\n".encode() + rest
+    return request
+
+
+def _head_done(data: bytes) -> bool:
+    return b"\r\n\r\n" in data
+
+
+@pytest.mark.parametrize("origin,host", [
+    ("null", None),
+    ("http://foreign.example", None),
+    (None, "foreign.example"),
+    (None, ""),
+], ids=["opaque_origin", "foreign_origin", "foreign_host", "empty_host"])
+def test_upgrade_host_and_origin_as_plain(svc, origin, host):
+    """
+    A websocket upgrade is held to the host and origin policy of a plain
+    request: refused where the plain request is refused, else upgraded.
+    """
+    if svc.name not in HTTP_SERVICES:
+        pytest.skip(f"{svc.name}: no plain http request")
+    plain = exchange(svc.host, svc.port, [_headed(
+        svc.http_probe(), origin, host, svc.authority)], done=http_done)
+    upgrade = exchange(svc.host, svc.port, [_headed(
+        ws_upgrade("/", svc.authority, headers=svc.auth_headers()),
+        origin, host, svc.authority)], done=_head_done)
+    plain_status, upgrade_status = http_status(plain), http_status(upgrade)
+    assert plain_status is not None, str(plain)
+    if plain_status >= 400:
+        assert upgrade_status != 101, \
+            f"plain {plain_status}, upgrade {upgrade_status}"
+    else:
+        assert upgrade_status == 101, \
+            f"plain {plain_status}, upgrade {upgrade_status}"
+
+
+def test_upgrade_opaque_origin_refused(svc):
+    """
+    An opaque origin (null) is refused by default, as for a plain request.
+    Electrum and sparrow do not expose allow_opaque_origin.
+    """
+    if svc.name in HTTP_SERVICES:
+        pytest.skip(f"{svc.name}: held to its plain policy (as_plain)")
+    upgrade = exchange(svc.host, svc.port, [_headed(
+        ws_upgrade("/", svc.authority, headers=svc.auth_headers()),
+        origin="null")], done=_head_done)
+    status = http_status(upgrade)
+    assert status != 101, f"upgrade {status}"
+
+
 def test_upgrade_with_compression_offer(svc):
     """permessage-deflate offered: accepted or ignored, and the server then
     frames consistently with what it accepted."""

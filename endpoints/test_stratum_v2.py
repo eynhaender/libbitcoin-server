@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import socket
 import struct
 import time
 
@@ -75,8 +76,11 @@ _MAXIMUM_TARGET = b"\xff" * 32
 # The target of difficulty one (bits 0x1d00ffff).
 _DIFFICULTY_ONE = 0xffff << 208
 
-# Hashes tried for a share or block before the test skips (seconds in python).
+# Hashes tried for a share or block (seconds in python).
 _MAXIMUM_TRIES = 1 << 20
+
+# A search of the budget misses with probability e^-16 at this bound.
+_REACHABLE_TRIES = _MAXIMUM_TRIES // 16
 
 
 # ─── Codec ───────────────────────────────────────────────────────────────────
@@ -1000,7 +1004,7 @@ def test_submit_futuristic_timestamp_dropped(extended: "Miner"):
 
 
 def _reachable(miner: "Miner", target: int):
-    if tries(target) > _MAXIMUM_TRIES:
+    if tries(target) > _REACHABLE_TRIES:
         pytest.skip("share target not reachable in python, lower "
                     "[stratum_v2] minimum_difficulty")
 
@@ -1029,6 +1033,7 @@ def test_submit_prior_job_retained(extended: "Miner"):
     extended.client.expect(SET_TARGET)
     refreshed = extended.client.expect(NEW_EXTENDED_MINING_JOB)
     assert refreshed["job_id"] != extended.job["job_id"]
+    assert refreshed["min_ntime"] > extended.previous["min_ntime"]
 
     rolled = (4).to_bytes(extended.rolled, "little")
     found = extended.search(extended.target, rolled)
@@ -1042,13 +1047,15 @@ def test_submit_evicted_job_is_stale(extended: "Miner"):
     A channel retains its latest jobs (16), a share of an earlier job of the
     same previous block is stale.
     """
-    target = extended.target
+    target, time_ = extended.target, extended.previous["min_ntime"]
     for _ in range(17):
         target //= 2
         extended.client.send(update_channel(
             extended.channel_id, max_target=target.to_bytes(32, "little")))
         extended.client.expect(SET_TARGET)
-        extended.client.expect(NEW_EXTENDED_MINING_JOB)
+        job = extended.client.expect(NEW_EXTENDED_MINING_JOB)
+        assert job["min_ntime"] > time_
+        time_ = job["min_ntime"]
     error = extended.submit(0)
     assert error["type"] == SUBMIT_SHARES_ERROR
     assert error["error_code"] == "stale-share"
@@ -1058,7 +1065,7 @@ def test_submit_evicted_job_is_stale(extended: "Miner"):
 def test_submit_valid_share(request, kind: str):
     """A share meeting the target is valid, and answered once."""
     miner = request.getfixturevalue(kind)
-    if tries(miner.target) > _MAXIMUM_TRIES:
+    if tries(miner.target) > _REACHABLE_TRIES:
         pytest.skip("share target not reachable in python, lower "
                     "[stratum_v2] minimum_difficulty")
     rolled = (2).to_bytes(miner.rolled, "little") if miner.rolled else b""
@@ -1086,7 +1093,7 @@ def test_submit_mines_block(request, kind: str, native_config: dict):
     miner = request.getfixturevalue(kind)
     block = expand(miner.previous["nbits"])
     target = min(block, miner.target)
-    if tries(target) > _MAXIMUM_TRIES:
+    if tries(target) > _REACHABLE_TRIES:
         pytest.skip("block target not reachable in python (not regtest)")
     try:
         before = native_top(native_config)
@@ -1127,7 +1134,7 @@ def test_mined_block_moves_other_connection(extended: "Miner",
 
     block = expand(extended.previous["nbits"])
     target = min(block, extended.target)
-    if tries(target) > _MAXIMUM_TRIES:
+    if tries(target) > _REACHABLE_TRIES:
         pytest.skip("block target not reachable in python (not regtest)")
 
     rolled = (5).to_bytes(extended.rolled, "little")
@@ -1170,7 +1177,7 @@ def test_update_lower_max_target_sets_target(extended: "Miner"):
     assert int.from_bytes(target["maximum_target"], "little") <= \
         extended.target // 2
     job = extended.client.expect(NEW_EXTENDED_MINING_JOB)
-    assert job["min_ntime"] is not None
+    assert job["min_ntime"] > extended.previous["min_ntime"]
 
 
 def test_update_hash_rate_sets_target(extended: "Miner"):
@@ -1187,7 +1194,23 @@ def test_update_hash_rate_sets_target(extended: "Miner"):
     assert int.from_bytes(message["maximum_target"], "little") < \
         extended.target
     job = extended.client.expect(NEW_EXTENDED_MINING_JOB)
-    assert job["min_ntime"] is not None
+    assert job["min_ntime"] > extended.previous["min_ntime"]
+
+
+def test_update_standard_refreshes_job_later(standard: "Miner"):
+    """
+    A refreshed standard job is the same template (merkle root and version)
+    at a later time.
+    """
+    maximum = (standard.target // 2).to_bytes(32, "little")
+    standard.client.send(update_channel(standard.channel_id,
+                                        max_target=maximum))
+    standard.client.expect(SET_TARGET)
+    job = standard.client.expect(NEW_MINING_JOB)
+    assert job["job_id"] != standard.job["job_id"]
+    assert job["min_ntime"] > standard.previous["min_ntime"]
+    assert job["merkle_root"] == standard.job["merkle_root"]
+    assert job["version"] == standard.job["version"]
 
 
 def test_update_closed_channel(extended: "Miner"):
@@ -1223,6 +1246,51 @@ def test_close_channel_refuses_shares(extended: "Miner"):
     error = extended.submit(0)
     assert error["type"] == SUBMIT_SHARES_ERROR
     assert error["error_code"] == "invalid-channel-id"
+
+
+# ─── Resources ───────────────────────────────────────────────────────────────
+
+# Memory a closed connection may leave behind (allocator noise), in kB.
+_RETAINED_KB = 4
+
+
+def _anonymous_kb(pid: int) -> int:
+    with open(f"/proc/{pid}/status") as status:
+        for line in status:
+            if line.startswith("RssAnon:"):
+                return int(line.split()[1])
+    raise AssertionError("no RssAnon")
+
+
+@pytest.mark.parametrize("upgrade", [False, True], ids=["tcp", "websocket"])
+def test_closed_before_setup_released(request, stratum_v2_config: dict,
+                                      upgrade: bool):
+    """
+    A connection closed before its SetupConnection (before or after the
+    websocket upgrade) is released, its memory with it. Requires --bs-pid
+    (the server on this host).
+    """
+    pid = request.config.getoption("--bs-pid")
+    if not pid:
+        pytest.skip("server memory not observable (--bs-pid)")
+    address = (stratum_v2_config["host"], stratum_v2_config["port"])
+
+    def cycle(count: int):
+        for _ in range(count):
+            if upgrade:
+                _connect(stratum_v2_config).close()
+            else:
+                socket.create_connection(address, timeout=5).close()
+
+    cycle(500)
+    time.sleep(2)
+    before = _anonymous_kb(int(pid))
+    count = 2000
+    cycle(count)
+    time.sleep(2)
+    growth = _anonymous_kb(int(pid)) - before
+    assert growth < count * _RETAINED_KB, \
+        f"{growth} kB retained by {count} closed connections"
 
 
 # ─── Credentials ─────────────────────────────────────────────────────────────
