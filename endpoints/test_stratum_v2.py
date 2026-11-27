@@ -34,6 +34,9 @@ import pytest
 import requests
 import websocket
 
+from test_stratum_v1 import decode_segwit, script_height, segwit_script
+from test_stratum_v1 import parse_coinbase as parse_coinbase_full
+
 # Message types (mining protocol).
 SETUP_CONNECTION = 0x00
 SETUP_CONNECTION_SUCCESS = 0x01
@@ -325,6 +328,20 @@ class Sv2Client:
             return True
         return False
 
+    def poll(self, seconds: float) -> dict | None:
+        """The next message, or None where none arrives within the seconds."""
+        self.ws.settimeout(seconds)
+        try:
+            return self.receive()
+        except websocket.WebSocketTimeoutException:
+            return None
+        finally:
+            self.ws.settimeout(self.timeout)
+
+    def silent(self, seconds: float = 1.0) -> bool:
+        """No message arrives within the seconds, the connection retained."""
+        return self.poll(seconds) is None
+
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -369,6 +386,23 @@ def extended(ready: Sv2Client, stratum_v2_config: dict) -> "Miner":
     job = ready.expect(NEW_EXTENDED_MINING_JOB)
     previous = ready.expect(SET_NEW_PREV_HASH)
     return Miner(ready, channel, job, previous)
+
+
+@pytest.fixture
+def other(stratum_v2_config: dict):
+    """A second connection set up for mining."""
+    connection = _connect(stratum_v2_config)
+    connection.send(setup_connection())
+    connection.expect(SETUP_CONNECTION_SUCCESS)
+    yield connection
+    connection.close()
+
+
+@pytest.fixture
+def payout_configured(other: Sv2Client) -> bool:
+    """The server opens a channel for any identity (payout_address)."""
+    other.send(open_extended("not an address"))
+    return other.receive()["type"] == OPEN_EXTENDED_MINING_CHANNEL_SUCCESS
 
 
 @pytest.fixture
@@ -564,6 +598,87 @@ def test_get_without_upgrade(stratum_v2_config: dict):
     assert response.status_code in (401, 426)
 
 
+# ─── Framing ─────────────────────────────────────────────────────────────────
+
+def test_setup_connection_repeated_dropped(ready: Sv2Client):
+    ready.send(setup_connection())
+    assert ready.dropped()
+
+
+def test_unknown_message_dropped(ready: Sv2Client):
+    """A core protocol message type that is not served drops the miner."""
+    ready.send(frame(0x7f, b""))
+    assert ready.dropped()
+
+
+def test_unknown_extension_message_discarded(ready: Sv2Client,
+                                             stratum_v2_config: dict):
+    """A message of an extension not negotiated is discarded."""
+    ready.send(struct.pack("<HB", 0x0002, 0x42) +
+               (4).to_bytes(3, "little") + bytes(4))
+    assert ready.silent()
+    opened(ready, open_extended(stratum_v2_config["user"]),
+           OPEN_EXTENDED_MINING_CHANNEL_SUCCESS)
+
+
+def test_channel_message_without_channel_bit_dropped(ready: Sv2Client):
+    message = update_channel(0xffffffff)
+    ready.send(struct.pack("<H", 0x0000) + message[2:])
+    assert ready.dropped()
+
+
+def test_channel_bit_on_connection_message_dropped(ready: Sv2Client,
+                                                  stratum_v2_config: dict):
+    message = open_extended(stratum_v2_config["user"])
+    ready.send(struct.pack("<H", 0x8000) + message[2:])
+    assert ready.dropped()
+
+
+def test_frame_length_beyond_message_dropped(ready: Sv2Client,
+                                             stratum_v2_config: dict):
+    """The frame length exceeds its websocket message."""
+    ready.send(open_extended(stratum_v2_config["user"])[:-1])
+    assert ready.dropped()
+
+
+def test_frame_length_short_of_message_dropped(ready: Sv2Client,
+                                               stratum_v2_config: dict):
+    """The websocket message carries bytes beyond its frame."""
+    ready.send(open_extended(stratum_v2_config["user"]) + bytes(1))
+    assert ready.dropped()
+
+
+def test_truncated_payload_dropped(ready: Sv2Client,
+                                   stratum_v2_config: dict):
+    """A payload framed whole but missing its last fields."""
+    ready.send(frame(OPEN_EXTENDED_MINING_CHANNEL, Writer().u32(7)
+                     .str0_255(stratum_v2_config["user"]).data))
+    assert ready.dropped()
+
+
+def test_payload_trailing_bytes_dropped(ready: Sv2Client,
+                                        stratum_v2_config: dict):
+    """A payload framed whole but carrying bytes beyond its fields."""
+    message = open_extended(stratum_v2_config["user"])
+    ready.send(frame(OPEN_EXTENDED_MINING_CHANNEL, message[6:] + bytes(1)))
+    assert ready.dropped()
+
+
+def test_text_message_dropped(ready: Sv2Client):
+    ready.ws.send("mining.subscribe")
+    assert ready.dropped()
+
+
+def test_frame_beyond_maximum_request_dropped(ready: Sv2Client):
+    """A frame larger than any message is refused before it is read."""
+    try:
+        ready.send(struct.pack("<HB", 0x0002, 0x42) +
+                   (0xffffff).to_bytes(3, "little") + bytes(0xffffff))
+    except (websocket.WebSocketException, OSError):
+        return
+    assert ready.dropped()
+
+
 # ─── OpenExtendedMiningChannel ───────────────────────────────────────────────
 
 def test_open_extended_success(extended: "Miner"):
@@ -655,6 +770,88 @@ def test_open_extended_max_target_floors_target(ready: Sv2Client,
     assert int.from_bytes(channel["target"], "little") <= _DIFFICULTY_ONE
 
 
+def test_open_extended_identity_worker_suffix(ready: Sv2Client,
+                                              stratum_v2_config: dict):
+    """The identity up to the dot is the address, the rest names a worker."""
+    user = stratum_v2_config["user"]
+    if "." in user:
+        pytest.skip("--stratum-v2-user already carries a worker name")
+    opened(ready, open_extended(user + ".rig1"),
+           OPEN_EXTENDED_MINING_CHANNEL_SUCCESS)
+
+
+def test_open_extended_coinbase_rules(extended: "Miner",
+                                      stratum_v2_config: dict,
+                                      payout_configured: bool,
+                                      native_config: dict):
+    """The coinbase of a job: bip34 height, payout, bip141, bip54."""
+    coinbase = parse_coinbase_full(extended.coinbase(bytes(extended.rolled)))
+
+    # bip54: the sequence is not final and the locktime is the prior height.
+    height = script_height(coinbase["script"])
+    assert coinbase["sequence"] == 0xfffffffe
+    assert coinbase["locktime"] == height - 1
+
+    # The payout, then the zero value witness commitment (bip141).
+    (value, payout), (zero, commitment) = coinbase["outputs"]
+    assert value > 0
+    assert zero == 0
+    assert commitment[:6] == bytes.fromhex("6a24aa21a9ed")
+    assert len(commitment) == 38
+
+    decoded = decode_segwit(stratum_v2_config["user"].split(".")[0])
+    if decoded is not None and not payout_configured:
+        assert payout == segwit_script(decoded[1], decoded[2])
+
+    try:
+        top = native_top(native_config)
+    except (requests.RequestException, KeyError, ValueError):
+        return
+    assert height in (top["height"] + 1, top["height"] + 2)
+
+
+def test_open_extended_job_version(extended: "Miner"):
+    """The job version signals versionbits (bip9), with no rolled bits."""
+    version = extended.job["version"]
+    assert version & 0xe0000000 == 0x20000000
+    assert version & _ROLLING_MASK == 0
+
+
+def test_open_extended_unknown_identity_with_payout(other: Sv2Client,
+                                                    payout_configured: bool,
+                                                    stratum_v2_config: dict):
+    """With a payout address configured, any identity opens a channel."""
+    if not payout_configured:
+        pytest.skip("Server pays the identity ([stratum_v2] payout_address "
+                    "not configured)")
+    other.send(open_extended("anyone.rig1", 9))
+    channel = other.until(OPEN_EXTENDED_MINING_CHANNEL_SUCCESS)
+    assert channel["request_id"] == 9
+
+
+def test_open_too_many_channels(ready: Sv2Client, stratum_v2_config: dict):
+    """
+    Channels beyond [stratum_v2] maximum_channels are refused, the
+    connection retained. Skips where the maximum is above 64.
+    """
+    answers = (OPEN_EXTENDED_MINING_CHANNEL_SUCCESS, OPEN_MINING_CHANNEL_ERROR)
+    for request in range(1, 65):
+        ready.send(open_extended(stratum_v2_config["user"], request))
+        response = ready.receive()
+        while response["type"] not in answers:
+            response = ready.receive()
+        assert response["request_id"] == request
+        if response["type"] == OPEN_MINING_CHANNEL_ERROR:
+            if request == 1:
+                pytest.skip(f"channel refused ({response['error_code']})")
+            assert response["error_code"] == "too-many-channels"
+            ready.send(update_channel(0xffffffff))
+            error = ready.until(UPDATE_CHANNEL_ERROR, bound=4 * request)
+            assert error["error_code"] == "invalid-channel-id"
+            return
+    pytest.skip("[stratum_v2] maximum_channels is above 64")
+
+
 # ─── OpenStandardMiningChannel ───────────────────────────────────────────────
 
 def test_open_standard_success(standard: "Miner"):
@@ -672,6 +869,44 @@ def test_open_standard_first_job_is_future(standard: "Miner"):
     assert standard.previous["job_id"] == standard.job["job_id"]
 
 
+def test_open_standard_root_of_extended_job(extended: "Miner",
+                                            stratum_v2_config: dict):
+    """
+    The merkle root of a standard job is that of the extended job of the same
+    template, its coinbase carrying the whole standard extranonce prefix.
+    """
+    client = extended.client
+    channel = opened(client, open_standard(stratum_v2_config["user"], 8),
+                     OPEN_STANDARD_MINING_CHANNEL_SUCCESS)
+
+    # A template update issues jobs to both channels, in either order.
+    templates = [extended.job]
+    job, previous = None, None
+    message = client.receive()
+    while message is not None:
+        if message["type"] == NEW_EXTENDED_MINING_JOB:
+            templates.append(message)
+        elif message["type"] == NEW_MINING_JOB and job is None:
+            job = message
+        elif message["type"] == SET_NEW_PREV_HASH and \
+                message["channel_id"] == channel["channel_id"]:
+            previous = message
+        message = client.poll(0.5) if previous else client.receive()
+    if previous["prev_hash"] != extended.previous["prev_hash"]:
+        pytest.skip("top changed between the channels")
+
+    prefix = channel["extranonce_prefix"]
+    assert len(prefix) == len(extended.channel["extranonce_prefix"]) + \
+        extended.rolled
+
+    def root(template: dict) -> bytes:
+        node = dsha256(template["coinbase_tx_prefix"] + prefix +
+                       template["coinbase_tx_suffix"])
+        for item in template["merkle_path"]:
+            node = dsha256(node + item)
+        return node
+
+    assert job["merkle_root"] in [root(template) for template in templates]
 # ─── SubmitShares ────────────────────────────────────────────────────────────
 
 def test_submit_unknown_channel(extended: "Miner"):
@@ -724,6 +959,99 @@ def test_submit_low_difficulty(extended: "Miner"):
     error = extended.submit(nonce, rolled)
     assert error["type"] == SUBMIT_SHARES_ERROR
     assert error["error_code"] == "difficulty-too-low"
+
+
+def test_submit_error_echoes_channel_and_sequence(extended: "Miner"):
+    error = extended.submit(0, job_id=0xffffffff, sequence=42)
+    assert error["type"] == SUBMIT_SHARES_ERROR
+    assert error["channel_id"] == extended.channel_id
+    assert error["sequence_number"] == 42
+
+
+def _not_dropped(miner: "Miner") -> bool:
+    miner.client.send(update_channel(0xffffffff))
+    return miner.client.until(UPDATE_CHANNEL_ERROR)["error_code"] == \
+        "invalid-channel-id"
+
+
+def test_submit_version_rolled_within_mask(extended: "Miner"):
+    """Version bits rolled within the bip320 mask are a share, not invalid."""
+    version = extended.job["version"] | (1 << 13) | (1 << 28)
+    response = extended.submit(0, version=version)
+    if response["type"] == SUBMIT_SHARES_ERROR:
+        assert response["error_code"] == "difficulty-too-low"
+    assert _not_dropped(extended)
+
+
+def test_submit_ntime_rolled_forward(extended: "Miner"):
+    """A later timestamp, within the future limit, is a share."""
+    ntime = extended.previous["min_ntime"] + 60
+    response = extended.submit(0, ntime=ntime)
+    if response["type"] == SUBMIT_SHARES_ERROR:
+        assert response["error_code"] == "difficulty-too-low"
+    assert _not_dropped(extended)
+
+
+def test_submit_futuristic_timestamp_dropped(extended: "Miner"):
+    """A timestamp beyond the future limit (two hours) cannot be a block."""
+    error = extended.submit(0, ntime=int(time.time()) + 3 * 3600)
+    assert error["error_code"] == "invalid-share"
+    assert extended.client.dropped()
+
+
+def _reachable(miner: "Miner", target: int):
+    if tries(target) > _MAXIMUM_TRIES:
+        pytest.skip("share target not reachable in python, lower "
+                    "[stratum_v2] minimum_difficulty")
+
+
+def test_submit_shares_sum_is_difficulty(extended: "Miner"):
+    """A share is counted by the whole units of its difficulty."""
+    _reachable(extended, extended.target)
+    rolled = (3).to_bytes(extended.rolled, "little")
+    found = extended.search(extended.target, rolled)
+    assert found is not None
+    success = extended.submit(found[0], rolled)
+    assert success["type"] == SUBMIT_SHARES_SUCCESS
+    difficulty = _DIFFICULTY_ONE / extended.target
+    assert abs(success["new_shares_sum"] - int(difficulty)) <= 1
+
+
+def test_submit_prior_job_retained(extended: "Miner"):
+    """
+    A job refreshed at a new target retains the prior job of the same
+    previous block, a share of which is valid at its own target.
+    """
+    _reachable(extended, extended.target)
+    maximum = (extended.target // 2).to_bytes(32, "little")
+    extended.client.send(update_channel(extended.channel_id,
+                                        max_target=maximum))
+    extended.client.expect(SET_TARGET)
+    refreshed = extended.client.expect(NEW_EXTENDED_MINING_JOB)
+    assert refreshed["job_id"] != extended.job["job_id"]
+
+    rolled = (4).to_bytes(extended.rolled, "little")
+    found = extended.search(extended.target, rolled)
+    assert found is not None
+    success = extended.submit(found[0], rolled)
+    assert success["type"] == SUBMIT_SHARES_SUCCESS, success
+
+
+def test_submit_evicted_job_is_stale(extended: "Miner"):
+    """
+    A channel retains its latest jobs (16), a share of an earlier job of the
+    same previous block is stale.
+    """
+    target = extended.target
+    for _ in range(17):
+        target //= 2
+        extended.client.send(update_channel(
+            extended.channel_id, max_target=target.to_bytes(32, "little")))
+        extended.client.expect(SET_TARGET)
+        extended.client.expect(NEW_EXTENDED_MINING_JOB)
+    error = extended.submit(0)
+    assert error["type"] == SUBMIT_SHARES_ERROR
+    assert error["error_code"] == "stale-share"
 
 
 @pytest.mark.parametrize("kind", ["extended", "standard"])
@@ -784,6 +1112,39 @@ def test_submit_mines_block(request, kind: str, native_config: dict):
     assert stale["error_code"] == "stale-share"
 
 
+def test_mined_block_moves_other_connection(extended: "Miner",
+                                            other: Sv2Client,
+                                            stratum_v2_config: dict,
+                                            native_config: dict):
+    """
+    A block mined on one connection moves the channels of another to a job
+    on it, a share of their prior job then stale. Regtest only.
+    """
+    channel = opened(other, open_extended(stratum_v2_config["user"]),
+                     OPEN_EXTENDED_MINING_CHANNEL_SUCCESS)
+    observer = Miner(other, channel, other.expect(NEW_EXTENDED_MINING_JOB),
+                     other.expect(SET_NEW_PREV_HASH))
+
+    block = expand(extended.previous["nbits"])
+    target = min(block, extended.target)
+    if tries(target) > _MAXIMUM_TRIES:
+        pytest.skip("block target not reachable in python (not regtest)")
+
+    rolled = (5).to_bytes(extended.rolled, "little")
+    found = extended.search(target, rolled)
+    assert found is not None
+    nonce, digest = found
+    assert extended.submit(nonce, rolled)["type"] == SUBMIT_SHARES_SUCCESS
+
+    future = other.until(NEW_EXTENDED_MINING_JOB)
+    assert future["min_ntime"] is None
+    previous = other.expect(SET_NEW_PREV_HASH)
+    assert previous["prev_hash"] == digest
+    assert previous["job_id"] == future["job_id"]
+    stale = observer.submit(0, sequence=3)
+    assert stale["error_code"] == "stale-share"
+
+
 # ─── UpdateChannel and CloseChannel ──────────────────────────────────────────
 
 def test_update_unknown_channel(extended: "Miner"):
@@ -812,6 +1173,51 @@ def test_update_lower_max_target_sets_target(extended: "Miner"):
     assert job["min_ntime"] is not None
 
 
+def test_update_hash_rate_sets_target(extended: "Miner"):
+    """
+    A nominal hash rate sets the difficulty of a channel to a share each
+    interval, unless [stratum_v2] start_difficulty fixes it.
+    """
+    extended.client.send(update_channel(extended.channel_id, hash_rate=1e15))
+    message = extended.client.poll(2.0)
+    if message is None:
+        pytest.skip("difficulty not automatic ([stratum_v2] "
+                    "start_difficulty configured)")
+    assert message["type"] == SET_TARGET
+    assert int.from_bytes(message["maximum_target"], "little") < \
+        extended.target
+    job = extended.client.expect(NEW_EXTENDED_MINING_JOB)
+    assert job["min_ntime"] is not None
+
+
+def test_update_closed_channel(extended: "Miner"):
+    extended.client.send(close_channel(extended.channel_id))
+    extended.client.send(update_channel(extended.channel_id))
+    error = extended.client.until(UPDATE_CHANNEL_ERROR)
+    assert error["channel_id"] == extended.channel_id
+    assert error["error_code"] == "invalid-channel-id"
+
+
+def test_close_unknown_channel_ignored(extended: "Miner"):
+    extended.client.send(close_channel(0xffffffff))
+    error = extended.submit(0, job_id=0xffffffff)
+    assert error["error_code"] == "invalid-job-id"
+
+
+def test_close_channel_retains_others(extended: "Miner",
+                                      stratum_v2_config: dict):
+    client = extended.client
+    second = opened(client, open_extended(stratum_v2_config["user"], 8),
+                    OPEN_EXTENDED_MINING_CHANNEL_SUCCESS)
+    client.send(close_channel(second["channel_id"]))
+    client.send(submit_extended(second["channel_id"], 1, 0, 0, 0, 0,
+                                bytes(extended.rolled)))
+    assert client.until(SUBMIT_SHARES_ERROR)["error_code"] == \
+        "invalid-channel-id"
+    error = extended.submit(0, job_id=0xffffffff)
+    assert error["error_code"] == "invalid-job-id"
+
+
 def test_close_channel_refuses_shares(extended: "Miner"):
     extended.client.send(close_channel(extended.channel_id))
     error = extended.submit(0)
@@ -827,3 +1233,10 @@ def test_upgrade_wrong_password_refused(stratum_v2_config: dict):
     with pytest.raises(websocket.WebSocketException):
         Sv2Client(stratum_v2_config,
                   password=stratum_v2_config["password"] + "x")
+
+
+def test_upgrade_without_credential_refused(stratum_v2_config: dict):
+    if not stratum_v2_config["password"]:
+        pytest.skip("no credential configured (--stratum-v2-password)")
+    with pytest.raises(websocket.WebSocketException):
+        Sv2Client(stratum_v2_config, password="")

@@ -19,9 +19,9 @@ Integration tests for the client-server interfaces of libbitcoin-server
 | **Transports** | TCP downgrade, HTTP POST, websocket | `test_transports.py` | 6 |
 | **Stratum v1** | TCP/HTTP/websocket + JSON-RPC 1.0 | `test_stratum_v1.py` | 45 |
 | **Robustness** (all services) | raw TCP/HTTP/websocket, misbehaving clients | `test_robustness_*.py`, `test_longrun.py` | 145 |
-| **Stratum v2** | websocket + binary frames | `test_stratum_v2.py` | 37 |
+| **Stratum v2** | websocket + binary frames | `test_stratum_v2.py` | 63 |
 
-Test counts are test functions; parametrized cases run more (about 2,150 in
+Test counts are test functions; parametrized cases run more (about 2,180 in
 all).
 
 ## Prerequisites
@@ -416,6 +416,7 @@ connections = 16
 bind = 127.0.0.1:18880
 connections = 16
 minimum_difficulty = 0.00001  # shares reachable in python
+maximum_channels = 4          # too-many-channels reachable
 coinbase_tag = /libbitcoin-test/
 # payout_address = bcrt1q...  # any worker name is then authorized
 # credential = miner:secret   # then --stratum-v1-worker=miner.rig1 --stratum-v1-password=secret
@@ -440,21 +441,40 @@ Noise). The suite carries its own frame codec.
   and version rolling flags accepted, work selection and other protocols
   refused (and the connection dropped), mining before setup dropped, and a
   GET without upgrade refused
+- **Framing:** a repeated SetupConnection, an unknown message type, a missing
+  or misplaced channel bit, a frame length beyond or short of its websocket
+  message, a truncated payload, trailing payload bytes, a text message and a
+  frame beyond the maximum request (each dropped), and a message of an
+  extension not negotiated (discarded, the connection retained)
 - **OpenExtendedMiningChannel:** result fields, a future first job followed
   by its previous block (the confirmed top), the coinbase layout ending the
   input script in the extranonce, distinct channels and prefixes on one
   connection, an invalid user, a zero maximum target, a minimum extranonce
-  above the server's, and a target at or below the maximum target
-- **OpenStandardMiningChannel:** result fields, and a future first job with
-  its merkle root followed by its previous block
+  above the server's, a target at or below the maximum target, an identity
+  with a worker suffix, the coinbase rules (bip34 height, payout to the
+  identity, bip141 commitment, bip54 sequence and locktime), the job version
+  (bip9, no rolled bits), any identity with a configured payout address, and
+  `too-many-channels` beyond `maximum_channels` (skipped above 64)
+- **OpenStandardMiningChannel:** result fields, a future first job with its
+  merkle root followed by its previous block, and that root computed from the
+  extended job of the same template with the standard extranonce prefix
 - **SubmitShares:** unknown channel and job, a standard share on an extended
   channel, a wrong extranonce size, version bits outside `1fffe000` and an
   invalid timestamp (each dropped), low difficulty, a valid share answered
   once (`duplicate-share`), and a mined block that becomes the top, followed
-  by its previous block, a share of the prior job then `stale-share`
+  by its previous block, a share of the prior job then `stale-share`; errors
+  echo channel and sequence, version bits rolled within the mask and a later
+  ntime are shares, a futuristic timestamp is dropped, `new_shares_sum` is the
+  share difficulty, a refreshed job retains its prior job, a job evicted by
+  16 later jobs is `stale-share`, and a block mined on one connection moves
+  another connection to the new previous block
 - **UpdateChannel and CloseChannel:** unknown channel, zero maximum target,
-  a lower maximum target sets the target and sends the job again, and a
-  closed channel refuses shares
+  a lower maximum target sets the target and sends the job again, a nominal
+  hash rate sets the target (skipped with `start_difficulty`), a closed
+  channel refuses shares and updates, closing an unknown channel is ignored,
+  and closing one channel retains the others
+- **Credentials:** a wrong password and a missing credential refuse the
+  upgrade
 
 The share and block tests run where the targets are reachable, as for
 stratum v1. A regtest node adds to the stratum v1 configuration above:
@@ -464,6 +484,7 @@ stratum v1. A regtest node adds to the stratum v1 configuration above:
 bind = 127.0.0.1:18980
 connections = 16
 minimum_difficulty = 0.00001  # shares reachable in python
+maximum_channels = 4          # too-many-channels reachable
 # payout_address = bcrt1q...  # any user identity then opens a channel
 # credential = miner:secret   # then --stratum-v2-user=miner.rig1 --stratum-v2-password=secret
 ```
