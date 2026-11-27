@@ -198,6 +198,7 @@ function MinerDetail({
             <p className="text-textMuted text-sm break-all">
               web miner · {settings.worker} · <span className="font-mono">{settings.url}</span> ·{' '}
               {formatInteger(settings.threads)} threads
+              {state.simd !== undefined && <> · {state.simd ? 'WebAssembly SIMD' : 'JavaScript'}</>}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
