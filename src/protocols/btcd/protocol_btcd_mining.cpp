@@ -66,9 +66,15 @@ void protocol_btcd_mining::do_mining_info(const code& ec,
         return;
     }
 
+    // btcd reports getnetworkhashps over its default window.
+    double rate{};
+    if (!network_hash_ps(rate, height, hash_ps_window))
+    {
+        send_error(error::btcd::internal_error);
+        return;
+    }
+
     const auto& bitcoin = system_settings();
-    const auto span = to_floating(power2<uint64_t>(32u));
-    const auto period = bitcoin.block_spacing_seconds;
     const auto limit = bitcoin.proof_of_work_limit;
     send_result(object_t
     {
@@ -81,7 +87,7 @@ void protocol_btcd_mining::do_mining_info(const code& ec,
         { "generate", false },
         { "genproclimit", 0 },
         { "hashespersec", 0.0 },
-        { "networkhashps", top->difficulty() * span / period },
+        { "networkhashps", rate },
         { "pooledtx", to64(links.size()) },
         { "testnet", btcd::is_testnet(bitcoin) }
     });

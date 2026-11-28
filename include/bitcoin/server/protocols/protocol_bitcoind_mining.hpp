@@ -60,6 +60,12 @@ protected:
     void handle_submitted(const system::hash_digest& hash,
         submission outcome, const code& ec) NOEXCEPT override;
 
+    /// The getnetworkhashps default window (blocks).
+    static constexpr size_t hash_ps_window = 120;
+
+    /// Network hashes per second over window blocks ending at target height.
+    bool network_hash_ps(double& out, size_t target, size_t window) NOEXCEPT;
+
     /// Complete a getblocktemplate result.
     virtual void finish_template(network::rpc::object_t& out) const NOEXCEPT;
 

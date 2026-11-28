@@ -103,20 +103,33 @@ void protocol_bitcoind_mining::handle_get_network_hash_ps(const code& ec,
         return;
     }
 
-    window = std::min(window, target);
-    if (is_zero(window))
-    {
-        send_result(to64(zero));
-        return;
-    }
-
-    // The pinned ancestry makes the window walk reorg-stable.
-    database::header_links branch{};
-    if (!query.get_ancestry(branch, query.to_confirmed(target), add1(window)))
+    double rate{};
+    if (!network_hash_ps(rate, target, window))
     {
         send_error(error::bitcoind::internal_error);
         return;
     }
+
+    if (is_zero(rate))
+        send_result(to64(zero));
+    else
+        send_result(rate);
+}
+
+// Work over the window ending at target divided by its timestamp span.
+bool protocol_bitcoind_mining::network_hash_ps(double& out, size_t target,
+    size_t window) NOEXCEPT
+{
+    out = 0.0;
+    window = std::min(window, target);
+    if (is_zero(window))
+        return true;
+
+    // The pinned ancestry makes the window walk reorg-stable.
+    const auto& query = archive();
+    database::header_links branch{};
+    if (!query.get_ancestry(branch, query.to_confirmed(target), add1(window)))
+        return false;
 
     // The window timespan is bounded by its observed timestamps.
     auto minimum = max_uint32;
@@ -125,31 +138,23 @@ void protocol_bitcoind_mining::handle_get_network_hash_ps(const code& ec,
     {
         const auto header = query.get_header(ancestor);
         if (!header)
-        {
-            send_error(error::bitcoind::internal_error);
-            return;
-        }
+            return false;
 
         minimum = std::min(minimum, header->timestamp());
         maximum = std::max(maximum, header->timestamp());
     }
 
     if (minimum == maximum)
-    {
-        send_result(to64(zero));
-        return;
-    }
+        return true;
 
     uint256_t start_work{}, end_work{};
     if (!query.get_branch_work(start_work, branch.back()) ||
         !query.get_branch_work(end_work, branch.front()))
-    {
-        send_error(error::bitcoind::internal_error);
-        return;
-    }
+        return false;
 
     const auto work = (end_work - start_work).convert_to<double>();
-    send_result(work / (maximum - minimum));
+    out = work / (maximum - minimum);
+    return true;
 }
 
 void protocol_bitcoind_mining::handle_get_mining_info(const code& ec,
@@ -216,9 +221,15 @@ void protocol_bitcoind_mining::do_mining_info(const code& ec,
         { "target", encode_hash(from_uintx(chain::compact::expand(header.bits()))) }
     };
 
+    // bitcoind reports getnetworkhashps over its default window.
+    double rate{};
+    if (!network_hash_ps(rate, height, hash_ps_window))
+    {
+        send_error(error::bitcoind::internal_error);
+        return;
+    }
+
     const auto minimum = node_settings().pool.minimum_fee_rate_();
-    const auto span = to_floating(power2<uint64_t>(32u));
-    const auto period = bitcoin.block_spacing_seconds;
 
     // bitcoind "blocks" is a height, not a count.
     send_result(object_t
@@ -227,7 +238,7 @@ void protocol_bitcoind_mining::do_mining_info(const code& ec,
         { "bits", encode_base16(to_big_endian(top->bits())) },
         { "difficulty", top->difficulty() },
         { "target", encode_hash(from_uintx(chain::compact::expand(top->bits()))) },
-        { "networkhashps", top->difficulty() * span / period },
+        { "networkhashps", rate },
         { "pooledtx", to64(links.size()) },
         { "blockmintxfee", to_btc(minimum) },
         { "chain", chain_name(bitcoin) },

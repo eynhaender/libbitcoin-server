@@ -1230,6 +1230,14 @@ BC_AUTO_TEST_CASE(btcd_rpc__getmininginfo__ten_block_store__btcd_fields)
     BC_REQUIRE(!info.contains("chain"));
 }
 
+BC_AUTO_TEST_CASE(btcd_rpc__getmininginfo__ten_block_store__default_network_hash_ps)
+{
+    const auto info = rpc("getmininginfo");
+    const auto rate = rpc("getnetworkhashps");
+    BC_REQUIRE(rate.at("result").as_double() > 0.0);
+    BC_REQUIRE_EQUAL(info.at("result").at("networkhashps").as_double(), rate.at("result").as_double());
+}
+
 BC_AUTO_TEST_CASE(btcd_rpc__disconnectnode__no_channels__peer_not_found)
 {
     const auto response = rpc("disconnectnode", R"(["1.2.3.4:8333"])");

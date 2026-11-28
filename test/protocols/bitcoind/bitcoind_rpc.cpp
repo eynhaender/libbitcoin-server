@@ -767,6 +767,14 @@ BC_AUTO_TEST_CASE(bitcoind_rpc__getmininginfo__ten_block_store__expected)
     BC_REQUIRE(result.at("warnings").as_array().empty());
 }
 
+BC_AUTO_TEST_CASE(bitcoind_rpc__getmininginfo__ten_block_store__default_network_hash_ps)
+{
+    const auto info = rpc("getmininginfo");
+    const auto rate = rpc("getnetworkhashps");
+    BC_REQUIRE(rate.at("result").as_double() > 0.0);
+    BC_REQUIRE_EQUAL(info.at("result").at("networkhashps").as_double(), rate.at("result").as_double());
+}
+
 BC_AUTO_TEST_CASE(bitcoind_rpc__createrawtransaction__one_in_one_out__hex)
 {
     const auto txid = encode_hash(test::block1.transactions_ptr()->front()->hash(false));
