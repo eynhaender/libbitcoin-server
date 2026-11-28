@@ -1,6 +1,8 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FitHash } from '@/components/fit-hash';
+import { FleetChart, PinIcon, slotColor } from '@/components/fleet-chart';
 import { HashrateChart } from '@/components/hashrate-chart';
+import { FLEET_COLORS, OTHER, assignSlots, canPin, fleetSeries, type FleetSlots } from '@/lib/mining/fleet';
 import type { AdminMiningFrame, MiningDevice } from '@/lib/admin-contract';
 import { useCurrentTime } from '@/lib/use-current-time';
 import { formatInteger } from '@/lib/format';
@@ -17,11 +19,29 @@ import {
 export function Mining({ metrics }: { metrics: WorkerMetricsStore }) {
   const mining = useSyncExternalStore(metrics.subscribeMining, metrics.getMining, metrics.getMining);
   const [chosen, setChosen] = useState<string>();
+  const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const [focus, setFocus] = useState<string | null>(null);
   const now = useCurrentTime();
-  const devices = mining?.devices ?? [];
+  const devices = useMemo(() => mining?.devices ?? [], [mining]);
   const device = devices.find((entry) => entry.id === chosen) ?? devices[0];
   const fleet = devices.reduce((sum, entry) => sum + entry.hashrate, 0);
   const services = [...new Set(devices.map((entry) => entry.service))];
+
+  // Slots persist across frames, so a device keeps its color while connected.
+  const previous = useRef<FleetSlots>({});
+  const slots = useMemo(() => {
+    previous.current = assignSlots(previous.current, devices, pinned);
+    return previous.current;
+  }, [devices, pinned]);
+  const series = useMemo(() => fleetSeries(devices, slots, hidden), [devices, slots, hidden]);
+  const names = useMemo(() => new Map(devices.map((entry) => [entry.id, deviceName(entry)])), [devices]);
+  const colors = Object.keys(slots).length;
+  const toggle = (set: ReadonlySet<string>, key: string) => {
+    const next = new Set(set);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  };
 
   return (
     <div className="space-y-8">
@@ -41,37 +61,86 @@ export function Mining({ metrics }: { metrics: WorkerMetricsStore }) {
           {mining ? 'No miners connected.' : 'Waiting for the mining feed…'}
         </p>
       ) : (
-        <div className="flex flex-wrap items-start gap-6">
-          <nav
-            aria-label="Devices"
-            className="border-accent/30 bg-surface/80 flex min-w-0 flex-[1_1_260px] flex-col gap-1 rounded-2xl border p-2"
+        <>
+          <section
+            aria-labelledby="fleet-hashrate-title"
+            className="border-accent/30 bg-surface/80 space-y-2 rounded-2xl border p-5"
           >
-            {services.map((service) => (
-              <div key={service} className="flex flex-col gap-1">
-                <p className="text-accentSecondary px-3 pt-2 pb-1 text-xs tracking-wide uppercase">{service}</p>
-                {devices
-                  .filter((entry) => entry.service === service)
-                  .map((entry) => (
-                    <DeviceButton
-                      key={entry.id}
-                      dot={deviceDot(entry, mining)}
-                      current={device?.id === entry.id}
-                      onClick={() => {
-                        setChosen(entry.id);
-                      }}
-                      name={deviceName(entry)}
-                      detail={`${entry.client || 'unknown client'} · ${entry.transport}`}
-                      rate={formatHashrate(entry.hashrate)}
-                    />
-                  ))}
-              </div>
-            ))}
-          </nav>
-
-          <section className="min-w-0 flex-[999_1_560px] space-y-4">
-            {device && <DeviceDetail device={device} now={now} />}
+            <div>
+              <h2 id="fleet-hashrate-title" className="text-accent text-lg font-semibold">
+                Fleet hashrate
+              </h2>
+              <p className="text-textMuted text-sm">
+                {colors < devices.length
+                  ? `The ${String(FLEET_COLORS)} largest or pinned devices in color, the other ${String(devices.length - colors)} summed.`
+                  : 'Each device in color, stacked to the fleet.'}
+              </p>
+            </div>
+            <FleetChart
+              series={series}
+              slots={slots}
+              names={names}
+              pinned={pinned}
+              hidden={hidden}
+              focus={focus}
+              onFocus={setFocus}
+              onToggle={(key) => {
+                setHidden((current) => toggle(current, key));
+              }}
+            />
           </section>
-        </div>
+
+          <div className="flex flex-wrap items-start gap-6">
+            <nav
+              aria-label="Devices"
+              className="border-accent/30 bg-surface/80 flex min-w-0 flex-[1_1_380px] flex-col gap-1 rounded-2xl border p-2"
+            >
+              {services.map((service) => (
+                <div key={service} className="flex flex-col gap-1">
+                  <p className="text-accentSecondary px-3 pt-2 pb-1 text-xs tracking-wide uppercase">{service}</p>
+                  {devices
+                    .filter((entry) => entry.service === service)
+                    .map((entry) => {
+                      const slot = slots[entry.id];
+                      const key = slot === undefined ? OTHER : entry.id;
+                      const isPinned = pinned.has(entry.id);
+                      return (
+                        <DeviceRow
+                          key={entry.id}
+                          dot={deviceDot(entry, mining)}
+                          color={slot === undefined ? 'var(--theme-text-muted)' : slotColor(slot)}
+                          current={device?.id === entry.id}
+                          dimmed={hidden.has(entry.id) || (focus !== null && focus !== key)}
+                          onClick={() => {
+                            setChosen(entry.id);
+                          }}
+                          onFocus={(on) => {
+                            setFocus(on ? key : null);
+                          }}
+                          name={deviceName(entry)}
+                          detail={`${entry.client || 'unknown client'} · ${entry.transport}${slot === undefined ? ' · in other' : ''}`}
+                          rate={formatHashrate(entry.hashrate)}
+                          pinned={isPinned}
+                          pinnable={canPin(entry.id, slots, pinned)}
+                          onPin={() => {
+                            setPinned((current) => toggle(current, entry.id));
+                          }}
+                          visible={!hidden.has(entry.id)}
+                          onHide={() => {
+                            setHidden((current) => toggle(current, entry.id));
+                          }}
+                        />
+                      );
+                    })}
+                </div>
+              ))}
+            </nav>
+
+            <section className="min-w-0 flex-[999_1_560px] space-y-4">
+              {device && <DeviceDetail device={device} now={now} />}
+            </section>
+          </div>
+        </>
       )}
 
       {mining && mining.blocks.length > 0 && <Blocks mining={mining} now={now} />}
@@ -101,39 +170,119 @@ function deviceName(device: MiningDevice): string {
   return device.workers.length > 0 ? device.workers.join(', ') : device.id;
 }
 
-function DeviceButton({
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {open ? (
+        <>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      ) : (
+        <>
+          <path d="M3 3l18 18" />
+          <path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2" />
+          <path d="M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+// A device of the list: its chart color, status, detail and rate (choosing
+// it), and buttons to pin its color and to hide it from the fleet chart.
+function DeviceRow({
   dot,
+  color,
   current,
+  dimmed,
   onClick,
+  onFocus,
   name,
   detail,
   rate,
+  pinned,
+  pinnable,
+  onPin,
+  visible,
+  onHide,
 }: {
   dot: string;
+  color: string;
   current: boolean;
+  dimmed: boolean;
   onClick: () => void;
+  onFocus: (on: boolean) => void;
   name: string;
   detail: string;
   rate: string;
+  pinned: boolean;
+  pinnable: boolean;
+  onPin: () => void;
+  visible: boolean;
+  onHide: () => void;
 }) {
+  const icon = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition';
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={current ? 'true' : undefined}
-      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
-        current
-          ? 'border-accent/50 bg-accentSecondary/20'
-          : 'hover:bg-accentSecondary/10 border-transparent'
-      }`}
+    <div
+      onMouseEnter={() => {
+        onFocus(true);
+      }}
+      onMouseLeave={() => {
+        onFocus(false);
+      }}
+      className={`flex items-center gap-2 rounded-xl border py-1 pr-1.5 pl-2 transition ${
+        current ? 'border-accent/50 bg-accentSecondary/20' : 'hover:bg-accentSecondary/10 border-transparent'
+      } ${dimmed ? 'opacity-50' : ''}`}
     >
-      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="text-textPrimary block truncate font-semibold">{name}</span>
-        <span className="text-textMuted block truncate text-xs">{detail}</span>
-      </span>
-      <span className="text-textPrimary text-sm font-medium tabular-nums">{rate}</span>
-    </button>
+      <span className="h-9 w-1 shrink-0 rounded-sm" style={{ background: color }} aria-hidden />
+      <button
+        type="button"
+        onClick={onClick}
+        aria-current={current ? 'true' : undefined}
+        className="flex min-w-0 flex-1 items-center gap-3 py-1.5 text-left"
+      >
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="text-textPrimary block truncate font-semibold">{name}</span>
+          <span className="text-textMuted block truncate text-xs">{detail}</span>
+        </span>
+        <span className="text-textPrimary text-sm font-medium whitespace-nowrap tabular-nums">{rate}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onPin}
+        disabled={!pinnable}
+        aria-pressed={pinned}
+        aria-label={pinned ? `Unpin ${name}` : `Pin ${name} in color`}
+        title={pinnable ? (pinned ? 'Unpin' : 'Pin in color') : 'All colors are pinned'}
+        className={`${icon} disabled:opacity-30 ${
+          pinned ? 'border-accent/50 bg-accent/15 text-accent' : 'text-textMuted hover:text-accent border-transparent'
+        }`}
+      >
+        <PinIcon />
+      </button>
+      <button
+        type="button"
+        onClick={onHide}
+        aria-pressed={!visible}
+        aria-label={visible ? `Hide ${name} from the fleet chart` : `Show ${name} in the fleet chart`}
+        title={visible ? 'Hide from the fleet chart' : 'Show in the fleet chart'}
+        className={`${icon} text-textMuted hover:text-accent border-transparent`}
+      >
+        <EyeIcon open={visible} />
+      </button>
+    </div>
   );
 }
 
