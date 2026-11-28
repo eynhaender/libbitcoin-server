@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FitHash } from '@/components/fit-hash';
-import { FleetChart, PinIcon, slotColor } from '@/components/fleet-chart';
+import { FleetChart, PinIcon, bandColor } from '@/components/fleet-chart';
 import { HashrateChart } from '@/components/hashrate-chart';
-import { FLEET_COLORS, OTHER, assignSlots, canPin, fleetSeries, type FleetSlots } from '@/lib/mining/fleet';
+import { FLEET, FLEET_COLORS, OTHER, assignSlots, canPin, fleetSeries, type FleetSlots } from '@/lib/mining/fleet';
 import type { AdminMiningFrame, MiningDevice } from '@/lib/admin-contract';
 import { useCurrentTime } from '@/lib/use-current-time';
 import { formatInteger } from '@/lib/format';
@@ -76,18 +76,7 @@ export function Mining({ metrics }: { metrics: WorkerMetricsStore }) {
                   : 'Each device in color, stacked to the fleet.'}
               </p>
             </div>
-            <FleetChart
-              series={series}
-              slots={slots}
-              names={names}
-              pinned={pinned}
-              hidden={hidden}
-              focus={focus}
-              onFocus={setFocus}
-              onToggle={(key) => {
-                setHidden((current) => toggle(current, key));
-              }}
-            />
+            <FleetChart series={series} names={names} hidden={hidden} focus={focus} onFocus={setFocus} />
           </section>
 
           <div className="flex flex-wrap items-start gap-6">
@@ -95,6 +84,34 @@ export function Mining({ metrics }: { metrics: WorkerMetricsStore }) {
               aria-label="Devices"
               className="border-accent/30 bg-surface/80 flex min-w-0 flex-[1_1_380px] flex-col gap-1 rounded-2xl border p-2"
             >
+              <SeriesRow
+                label="Fleet"
+                color="var(--theme-text-primary)"
+                rate={formatHashrate(series.current)}
+                visible={!hidden.has(FLEET)}
+                onHide={() => {
+                  setHidden((current) => toggle(current, FLEET));
+                }}
+              />
+              {series.others > 0 && (
+                <SeriesRow
+                  label={`Other (${String(series.others)})`}
+                  color="var(--theme-text-muted)"
+                  rate={formatHashrate(
+                    devices
+                      .filter((entry) => slots[entry.id] === undefined && !hidden.has(entry.id))
+                      .reduce((sum, entry) => sum + entry.hashrate, 0)
+                  )}
+                  dimmed={focus !== null && focus !== OTHER}
+                  onFocus={(on) => {
+                    setFocus(on ? OTHER : null);
+                  }}
+                  visible={!hidden.has(OTHER)}
+                  onHide={() => {
+                    setHidden((current) => toggle(current, OTHER));
+                  }}
+                />
+              )}
               {services.map((service) => (
                 <div key={service} className="flex flex-col gap-1">
                   <p className="text-accentSecondary px-3 pt-2 pb-1 text-xs tracking-wide uppercase">{service}</p>
@@ -108,7 +125,7 @@ export function Mining({ metrics }: { metrics: WorkerMetricsStore }) {
                         <DeviceRow
                           key={entry.id}
                           dot={deviceDot(entry, mining)}
-                          color={slot === undefined ? 'var(--theme-text-muted)' : slotColor(slot)}
+                          color={bandColor(slot)}
                           current={device?.id === entry.id}
                           dimmed={hidden.has(entry.id) || (focus !== null && focus !== key)}
                           onClick={() => {
@@ -199,8 +216,58 @@ function EyeIcon({ open }: { open: boolean }) {
   );
 }
 
-// A device of the list: its chart color, status, detail and rate (choosing
-// it), and buttons to pin its color and to hide it from the fleet chart.
+const ICON_BUTTON = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition';
+
+// A summed series of the fleet chart (the fleet, or other), its name in its
+// chart color, its rate, and a button to hide it from the chart.
+function SeriesRow({
+  label,
+  color,
+  rate,
+  dimmed = false,
+  onFocus,
+  visible,
+  onHide,
+}: {
+  label: string;
+  color: string;
+  rate: string;
+  dimmed?: boolean;
+  onFocus?: (on: boolean) => void;
+  visible: boolean;
+  onHide: () => void;
+}) {
+  return (
+    <div
+      onMouseEnter={() => onFocus?.(true)}
+      onMouseLeave={() => onFocus?.(false)}
+      className={`flex items-center gap-3 rounded-xl border border-transparent py-1 pr-1.5 pl-3 transition ${dimmed ? 'opacity-50' : ''}`}
+    >
+      <span
+        className={`min-w-0 flex-1 truncate font-semibold ${visible ? '' : 'line-through opacity-50'}`}
+        style={{ color }}
+      >
+        {label}
+      </span>
+      <span className="text-textPrimary text-sm font-medium whitespace-nowrap tabular-nums">{rate}</span>
+      <span className="h-8 w-8 shrink-0" aria-hidden />
+      <button
+        type="button"
+        onClick={onHide}
+        aria-pressed={!visible}
+        aria-label={visible ? `Hide ${label} from the fleet chart` : `Show ${label} in the fleet chart`}
+        title={visible ? 'Hide from the fleet chart' : 'Show in the fleet chart'}
+        className={`${ICON_BUTTON} text-textMuted hover:text-accent border-transparent`}
+      >
+        <EyeIcon open={visible} />
+      </button>
+    </div>
+  );
+}
+
+// A device of the list, its name in its chart color (the list is the chart's
+// legend): its status, detail and rate (choosing it), and buttons to pin its
+// color and to hide it from the fleet chart.
 function DeviceRow({
   dot,
   color,
@@ -232,7 +299,7 @@ function DeviceRow({
   visible: boolean;
   onHide: () => void;
 }) {
-  const icon = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition';
+  const icon = ICON_BUTTON;
   return (
     <div
       onMouseEnter={() => {
@@ -241,11 +308,10 @@ function DeviceRow({
       onMouseLeave={() => {
         onFocus(false);
       }}
-      className={`flex items-center gap-2 rounded-xl border py-1 pr-1.5 pl-2 transition ${
+      className={`flex items-center gap-2 rounded-xl border py-1 pr-1.5 pl-3 transition ${
         current ? 'border-accent/50 bg-accentSecondary/20' : 'hover:bg-accentSecondary/10 border-transparent'
       } ${dimmed ? 'opacity-50' : ''}`}
     >
-      <span className="h-9 w-1 shrink-0 rounded-sm" style={{ background: color }} aria-hidden />
       <button
         type="button"
         onClick={onClick}
@@ -254,7 +320,12 @@ function DeviceRow({
       >
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
         <span className="min-w-0 flex-1">
-          <span className="text-textPrimary block truncate font-semibold">{name}</span>
+          <span
+            className={`block truncate font-semibold ${visible ? '' : 'line-through'}`}
+            style={{ color }}
+          >
+            {name}
+          </span>
           <span className="text-textMuted block truncate text-xs">{detail}</span>
         </span>
         <span className="text-textPrimary text-sm font-medium whitespace-nowrap tabular-nums">{rate}</span>

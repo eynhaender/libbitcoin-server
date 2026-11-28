@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { CHART_COLORS } from '@/lib/chart-config';
 import { ago, axisRate, gridStep } from '@/lib/mining/axis';
-import { FLEET, OTHER, type FleetSeries, type FleetSlots } from '@/lib/mining/fleet';
+import { FLEET, OTHER, type FleetSeries } from '@/lib/mining/fleet';
 import { formatHashrate } from '@/lib/mining/format';
 
 const HEIGHT = 260;
@@ -16,7 +16,7 @@ export function slotColor(slot: number): string {
 }
 
 // A series color: its slot, else muted for other.
-function bandColor(slot: number | undefined): string {
+export function bandColor(slot: number | undefined): string {
   return slot === undefined ? 'var(--theme-text-muted)' : slotColor(slot);
 }
 
@@ -41,26 +41,20 @@ export function PinIcon({ size = 16 }: { size?: number }) {
 
 // The hash rate of the fleet over the span (seconds) ending at its last
 // sample: the colored devices and other stacked (or as lines), their sum the
-// fleet. Legend entries hide or show a series; hovering one highlights it.
+// fleet. The device list is its legend: hovering a band highlights it there.
 export function FleetChart({
   series,
-  slots,
   names,
-  pinned,
   hidden,
   focus,
   onFocus,
-  onToggle,
   span = 1800,
 }: {
   series: FleetSeries;
-  slots: FleetSlots;
   names: ReadonlyMap<string, string>;
-  pinned: ReadonlySet<string>;
   hidden: ReadonlySet<string>;
   focus: string | null;
   onFocus: (key: string | null) => void;
-  onToggle: (key: string) => void;
   span?: number;
 }) {
   const frame = useRef<HTMLDivElement>(null);
@@ -142,24 +136,6 @@ export function FleetChart({
 
   const hovered = hover === null ? undefined : shown.at(hover);
   const latest = sums.at(-1);
-  const rateOf = (key: string) => bands.find((band) => band.key === key)?.current ?? 0;
-  const legend = [
-    { key: FLEET, label: 'Fleet', color: 'var(--theme-text-primary)', rate: series.current },
-    ...Object.entries(slots)
-      .filter(([key]) => names.has(key))
-      .sort(([, a], [, b]) => a - b)
-      .map(([key, slot]) => ({ key, label: name(key), color: slotColor(slot), rate: rateOf(key) })),
-    ...(others > 0
-      ? [
-          {
-            key: OTHER,
-            label: name(OTHER),
-            color: 'var(--theme-text-muted)',
-            rate: rateOf(OTHER),
-          },
-        ]
-      : []),
-  ];
 
   return (
     <div className="space-y-3">
@@ -320,35 +296,6 @@ export function FleetChart({
             The fleet hashrate is drawn here while mining.
           </p>
         )}
-      </div>
-      <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
-        {legend.map((item) => {
-          const off = hidden.has(item.key);
-          return (
-            <button
-              key={item.key}
-              type="button"
-              aria-pressed={!off}
-              onClick={() => {
-                onToggle(item.key);
-              }}
-              onMouseEnter={() => {
-                if (item.key !== FLEET) onFocus(item.key);
-              }}
-              onMouseLeave={() => {
-                onFocus(null);
-              }}
-              className={`flex items-center gap-1 py-1 text-[13px] font-semibold transition ${off ? 'line-through opacity-35' : faded(item.key) && item.key !== FLEET ? 'opacity-45' : ''}`}
-              style={{ color: item.color }}
-            >
-              {pinned.has(item.key) && <PinIcon size={12} />}
-              {item.label}
-              {!off && (
-                <span className="text-textMuted font-normal tabular-nums">{formatHashrate(item.rate)}</span>
-              )}
-            </button>
-          );
-        })}
       </div>
     </div>
   );
